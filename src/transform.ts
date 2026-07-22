@@ -1,30 +1,57 @@
-import generate from "@babel/generator"
-import { parse } from "@babel/parser"
+import { parse as parseWithBabel } from "@babel/parser"
 import traverse, { type Binding, type NodePath } from "@babel/traverse"
 import * as t from "@babel/types"
+import { parse as parseWithRecast, print } from "recast"
 import { constantOf, isRemovablePure, requiredEffects } from "./analysis.js"
 import { validateConfig } from "./config.js"
 import { buildMatchers, matchCall, matchValue, type FlagMatcher } from "./matchers.js"
 import { simplifyPass } from "./simplify.js"
 import type { TransformOptions, TransformReport, TransformResult } from "./types.js"
 
-const parserPlugins = [
-  "jsx",
-  "typescript",
-  "decorators-legacy",
-  "decoratorAutoAccessors",
-  "importAttributes",
-] as const
+type BabelParserPlugins = NonNullable<NonNullable<Parameters<typeof parseWithBabel>[1]>["plugins"]>
+
+function parserPluginsFor(filename?: string): BabelParserPlugins {
+  const typescriptWithoutJsx = filename !== undefined && /\.(?:cts|mts|ts)$/i.test(filename)
+  return [
+    ...(typescriptWithoutJsx ? [] : ["jsx"]),
+    "typescript",
+    "decorators-legacy",
+    "decoratorAutoAccessors",
+    "importAttributes",
+  ] as BabelParserPlugins
+}
+
+function normalizeBabelAstForRecast(value: unknown): void {
+  if (Array.isArray(value)) {
+    value.forEach(normalizeBabelAstForRecast)
+    return
+  }
+  if (value === null || typeof value !== "object") return
+  const node = value as Record<string, unknown>
+  if (node.type === "TSInterfaceHeritage" || node.type === "TSClassImplements") {
+    node.type = "TSExpressionWithTypeArguments"
+  }
+  Object.values(node).forEach(normalizeBabelAstForRecast)
+}
 
 function parseSource(source: string, filename?: string): t.File {
   try {
-    return parse(source, {
-      sourceType: "unambiguous",
-      ...(filename === undefined ? {} : { sourceFilename: filename }),
-      plugins: [...parserPlugins] as any,
-      attachComment: true,
-      createParenthesizedExpressions: true,
-    })
+    return parseWithRecast(source, {
+      parser: {
+        parse(code: string) {
+          const ast = parseWithBabel(code, {
+            sourceType: "unambiguous",
+            ...(filename === undefined ? {} : { sourceFilename: filename }),
+            plugins: parserPluginsFor(filename),
+            attachComment: true,
+            createParenthesizedExpressions: true,
+            tokens: true,
+          })
+          normalizeBabelAstForRecast(ast)
+          return ast
+        },
+      },
+    }) as t.File
   } catch (error) {
     const prefix = filename === undefined ? "Unable to parse source" : `Unable to parse ${filename}`
     throw new SyntaxError(`${prefix}: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
@@ -43,6 +70,18 @@ function programPathFor(ast: t.File): NodePath<t.Program> {
   return result
 }
 
+function preferredQuote(ast: t.File): "single" | "double" {
+  let single = 0
+  let double = 0
+  t.traverseFast(ast, (node) => {
+    if (!t.isStringLiteral(node)) return
+    const raw = typeof node.extra?.raw === "string" ? node.extra.raw : undefined
+    if (raw?.startsWith("'")) single += 1
+    else if (raw?.startsWith('"')) double += 1
+  })
+  return single > double ? "single" : "double"
+}
+
 interface ReplacementState {
   matchers: FlagMatcher[]
   matchedBindings: Set<Binding>
@@ -50,10 +89,53 @@ interface ReplacementState {
   report: TransformReport
 }
 
+function disableObjectShorthand(path: NodePath<t.Expression>): void {
+  const parent = path.parentPath
+  if (parent.isObjectProperty() && parent.node.shorthand && parent.node.value === path.node) {
+    parent.node.shorthand = false
+  }
+}
+
+function argumentEffects(path: NodePath<t.Expression>): t.Expression[] {
+  if (isRemovablePure(path)) return []
+  if (path.isArrayExpression()) {
+    const effects: t.Expression[] = []
+    for (const element of path.get("elements")) {
+      if (element.node === null) continue
+      if (element.isSpreadElement()) {
+        effects.push(t.arrayExpression([t.spreadElement(element.node.argument)]))
+      } else if (element.isExpression()) {
+        effects.push(...argumentEffects(element))
+      }
+    }
+    return effects
+  }
+  if (path.isObjectExpression()) {
+    const effects: t.Expression[] = []
+    for (const property of path.get("properties")) {
+      if (property.isSpreadElement()) {
+        effects.push(t.objectExpression([t.spreadElement(property.node.argument)]))
+        continue
+      }
+      if (property.node.computed) {
+        const key = property.get("key")
+        if (key.isExpression()) effects.push(...argumentEffects(key))
+      }
+      if (property.isObjectProperty()) {
+        const value = property.get("value")
+        if (value.isExpression()) effects.push(...argumentEffects(value))
+      }
+    }
+    return effects
+  }
+  return [path.node]
+}
+
 function replacementFor(path: NodePath<t.Expression>, matcher: FlagMatcher, state: ReplacementState): boolean {
   if (matcher.kind !== "value" || !matchValue(path, matcher)) return false
   const replacement = t.booleanLiteral(matcher.flag.value ?? true)
   t.inheritsComments(replacement, path.node)
+  disableObjectShorthand(path)
   path.replaceWith(replacement)
   if (matcher.binding !== undefined) state.matchedBindings.add(matcher.binding)
   state.report.flagsReplaced += 1
@@ -76,8 +158,8 @@ function callReplacement(
   for (const argumentPath of path.get("arguments").slice(matcher.arguments.length)) {
     if (argumentPath.isSpreadElement()) {
       effects.push(t.arrayExpression([t.spreadElement(argumentPath.node.argument)]))
-    } else if (argumentPath.isExpression() && !isRemovablePure(argumentPath)) {
-      effects.push(argumentPath.node)
+    } else if (argumentPath.isExpression()) {
+      effects.push(...argumentEffects(argumentPath))
     }
   }
   const literal = t.booleanLiteral(value)
@@ -103,6 +185,7 @@ function inlineBooleanBindings(state: ReplacementState): void {
       }
       const replacement = t.booleanLiteral(value)
       t.inheritsComments(replacement, reference.node)
+      disableObjectShorthand(reference as NodePath<t.Expression>)
       reference.replaceWith(replacement)
       state.report.expressionsFolded += 1
     }
@@ -192,6 +275,12 @@ function cleanupImports(
     if (statementPath.node.specifiers.length === 0 && removeSideEffectImports) {
       moveImportComments(statementPath)
       statementPath.remove()
+    } else {
+      const replacement = t.cloneNode(statementPath.node, true, true)
+      const recastStatement = statementPath.node as t.ImportDeclaration & { comments?: t.Comment[] }
+      const recastReplacement = replacement as t.ImportDeclaration & { comments?: t.Comment[] }
+      if (recastStatement.comments !== undefined) recastReplacement.comments = recastStatement.comments
+      statementPath.replaceWith(replacement)
     }
   }
 }
@@ -249,6 +338,7 @@ export function transform(source: string, options: TransformOptions): TransformR
   const config = validateConfig(options)
   const report = createReport(options.filename)
   const ast = parseSource(source, options.filename)
+  const quote = preferredQuote(ast)
   const initialProgramPath = programPathFor(ast)
   const matcherSet = buildMatchers(initialProgramPath, config.flags)
   const matchedBindings = replaceFlags(ast, matcherSet.matchers, report)
@@ -285,13 +375,8 @@ export function transform(source: string, options: TransformOptions): TransformR
 
   if (totalChanges === 0) return { code: source, changed: false, report }
 
-  const generated = generate(ast, {
-    comments: true,
-    compact: false,
-    concise: false,
-    retainLines: false,
-  }).code
-  const code = generated.length === 0 ? "" : `${generated}\n`
+  const generated = print(ast, { reuseWhitespace: true, quote }).code
+  const code = generated.length === 0 || generated.endsWith("\n") ? generated : `${generated}\n`
   if (config.verify?.parse !== false) parseSource(code, options.filename)
 
   return { code, changed: code !== source, report }

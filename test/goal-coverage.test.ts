@@ -22,11 +22,11 @@ const b = !false
 const c = !!!true
 const d = true === false
 const e = true !== false`)
-    expect(result.code).toBe(`const a = true;
-const b = true;
-const c = false;
-const d = false;
-const e = true;
+    expect(result.code).toBe(`const a = true
+const b = true
+const c = false
+const d = false
+const e = true
 `)
   })
 
@@ -39,19 +39,19 @@ const c = true && value
 const d = false || value
 const e = false && value
 const f = true || value`)
-    expect(result.code).toContain("const a = true;")
-    expect(result.code).toContain("const b = false;")
-    expect(result.code).toContain("const c = value;")
-    expect(result.code).toContain("const d = value;")
-    expect(result.code).toContain("const e = false;")
-    expect(result.code).toContain("const f = true;")
+    expect(result.code).toContain("const a = true")
+    expect(result.code).toContain("const b = false")
+    expect(result.code).toContain("const c = value")
+    expect(result.code).toContain("const d = value")
+    expect(result.code).toContain("const e = false")
+    expect(result.code).toContain("const f = true")
   })
 
   it("folds nested expressions to a fixed point", () => {
     const result = run("const result = !(!false || (flag && true))", [
       { identifier: "flag", value: false },
     ])
-    expect(result.code).toBe("const result = false;\n")
+    expect(result.code).toBe("const result = false\n")
     expect(result.report.passes).toBeGreaterThan(1)
   })
 
@@ -63,12 +63,12 @@ const c = x && x
 const d = x || x
 const e = x && !x
 const f = x || !x`)
-    expect(result.code).toContain("const a = x;")
-    expect(result.code).toContain("const b = x;")
-    expect(result.code).toContain("const c = x;")
-    expect(result.code).toContain("const d = x;")
-    expect(result.code).toContain("const e = false;")
-    expect(result.code).toContain("const f = true;")
+    expect(result.code).toContain("const a = x")
+    expect(result.code).toContain("const b = x")
+    expect(result.code).toContain("const c = x")
+    expect(result.code).toContain("const d = x")
+    expect(result.code).toContain("const e = false")
+    expect(result.code).toContain("const f = true")
   })
 
   it("preserves effectful evaluation in boolean and statement contexts", () => {
@@ -89,7 +89,7 @@ describe("goal: control flow", () => {
   it.each([
     ["if (true) { newPath() } else { oldPath() }", "newPath();\n"],
     ["if (false) { oldPath() } else { newPath() }", "newPath();\n"],
-    ["if (false) oldPath(); continueWork()", "continueWork();\n"],
+    ["if (false) oldPath(); continueWork()", "continueWork()\n"],
     ["if (true || check()) run(); else stop();", "run();\n"],
     ["if (true) { if (false) oldPath(); else newPath() }", "newPath();\n"],
     ["if (false) first(); else if (true) second(); else third();", "second();\n"],
@@ -98,7 +98,7 @@ describe("goal: control flow", () => {
   })
 
   it("keeps lexical branch scope", () => {
-    expect(run("if (true) { const value = createValue(); consume(value) }").code).toMatch(/^\{\n/)
+    expect(run("if (true) { const value = createValue(); consume(value) }").code).toMatch(/^\{[\s\n]/)
   })
 
   it("propagates return and throw and removes following code", () => {
@@ -110,9 +110,9 @@ describe("goal: control flow", () => {
   })
 
   it("folds plain and effectful ternaries", () => {
-    expect(run('const mode = true ? "new" : "old"').code).toBe('const mode = "new";\n')
+    expect(run('const mode = true ? "new" : "old"').code).toBe('const mode = "new"\n')
     expect(run("const result = (check(), true) ? newValue : oldValue").code).toBe(
-      "const result = (check(), newValue);\n",
+      "const result = (check(), newValue)\n",
     )
   })
 })
@@ -120,7 +120,7 @@ describe("goal: control flow", () => {
 describe("goal: JSX and loops", () => {
   it("covers JSX logical, ternary, attribute, and effectful-value behavior", () => {
     expect(run("const view = <>{true && <NewPanel />}</>").code).toContain("<NewPanel />")
-    expect(run("const view = <>{false && <LegacyPanel />}</>").code).toBe("const view = <></>;\n")
+    expect(run("const view = <>{false && <LegacyPanel />}</>").code).toBe("const view = <></>\n")
     expect(
       run("const view = <>{flag ? <NewPanel /> : <LegacyPanel />}</>", [
         { identifier: "flag", value: true },
@@ -143,7 +143,7 @@ describe("goal: JSX and loops", () => {
 
   it("retains lexical for-initializer scope and condition order", () => {
     const result = run("for (let item = initialize(); (check(), false); update()) work()")
-    expect(result.code).toBe("{\n  let item = initialize();\n  check();\n}\n")
+    expect(result.code).toBe("{\n  let item = initialize()\n  check();\n}\n")
   })
 
   it("does not rewrite do-while loops containing loop control", () => {

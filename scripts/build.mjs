@@ -35,6 +35,7 @@ await build({
   target: "node22",
   sourcemap: true,
   bundle: true,
+  external: ["recast"],
   banner: { js: "#!/usr/bin/env node" },
 })
 

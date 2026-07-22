@@ -139,6 +139,7 @@ function staticProperty(node: t.MemberExpression | t.OptionalMemberExpression): 
 
 function staticAccess(node: t.Expression | t.V8IntrinsicIdentifier): StaticAccess | undefined {
   if (t.isIdentifier(node)) return { root: node.name, properties: [], optional: false }
+  if (t.isThisExpression(node)) return { root: "this", properties: [], optional: false }
   if (!t.isMemberExpression(node) && !t.isOptionalMemberExpression(node)) return undefined
   const property = staticProperty(node)
   if (property === undefined || t.isSuper(node.object)) return undefined
@@ -156,7 +157,11 @@ function sameProperties(left: readonly string[], right: readonly string[]): bool
 }
 
 function bindingMatches(path: NodePath, access: StaticAccess, matcher: FlagMatcher): boolean {
-  return access.root === matcher.root && path.scope.getBinding(access.root) === matcher.binding
+  if (access.root !== matcher.root) return false
+  if (matcher.root === "this") return true
+  const binding = path.scope.getBinding(access.root)
+  if (matcher.binding !== undefined) return binding === matcher.binding
+  return (matcher.kind === "call" && matcher.properties.length > 0) || binding === undefined
 }
 
 function argumentMatches(

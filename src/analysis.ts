@@ -112,6 +112,29 @@ function purityOfNode(node: t.Expression, scope: Scope, position: number | null 
       ),
     )
   }
+  if (t.isArrayExpression(value)) {
+    const purities: Purity[] = []
+    for (const element of value.elements) {
+      if (element === null) continue
+      if (t.isSpreadElement(element)) return "unknown"
+      purities.push(purityOfNode(element, scope, position))
+    }
+    return combinePurity(...purities)
+  }
+  if (t.isObjectExpression(value)) {
+    const purities: Purity[] = []
+    for (const property of value.properties) {
+      if (t.isSpreadElement(property)) return "unknown"
+      if (property.computed && t.isExpression(property.key)) {
+        purities.push(purityOfNode(property.key, scope, position))
+      }
+      if (t.isObjectProperty(property)) {
+        if (!t.isExpression(property.value)) return "unknown"
+        purities.push(purityOfNode(property.value, scope, position))
+      }
+    }
+    return combinePurity(...purities)
+  }
   if (t.isAwaitExpression(value) || t.isYieldExpression(value)) return "effectful"
   if (
     t.isCallExpression(value) ||

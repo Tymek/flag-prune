@@ -39,11 +39,11 @@
   },
   "packageManager": "pnpm@11.9.0",
   "dependencies": {
-    "@babel/generator": "^8.0.0",
     "@babel/parser": "^8.0.4",
     "@babel/traverse": "^8.0.4",
     "@babel/types": "^8.0.4",
-    "diff": "^9.0.0"
+    "diff": "^9.0.0",
+    "recast": "^0.23.12"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

@@ -249,24 +249,44 @@ function hasDirectLexicalDeclarations(block: t.BlockStatement): boolean {
   )
 }
 
+function cloneMovedExpression(statement: t.ExpressionStatement): t.ExpressionStatement {
+  const clone = t.cloneNode(statement, true)
+  const recastStatement = statement as t.ExpressionStatement & { comments?: t.Comment[] }
+  const recastClone = clone as t.ExpressionStatement & { comments?: t.Comment[] }
+  const comments = recastStatement.comments ?? statement.leadingComments
+  if (comments != null) recastClone.comments = comments
+  return clone
+}
+
 function branchStatements(statement: t.Statement): t.Statement[] {
-  if (!t.isBlockStatement(statement)) return [statement]
+  if (!t.isBlockStatement(statement)) {
+    return [t.isExpressionStatement(statement) ? cloneMovedExpression(statement) : statement]
+  }
   if (hasDirectLexicalDeclarations(statement)) return [statement]
   const body = statement.body
   if (body.length > 0 && statement.leadingComments?.length) {
     body[0]!.leadingComments = [...statement.leadingComments, ...(body[0]!.leadingComments ?? [])]
   }
-  return body
+  return body.map((child) => (t.isExpressionStatement(child) ? cloneMovedExpression(child) : child))
 }
 
 function attachLeadingComments(statements: t.Statement[], comments: t.Comment[]): t.Statement[] {
   if (comments.length === 0) return statements
+  for (const comment of comments) {
+    const recastComment = comment as t.Comment & { leading?: boolean; trailing?: boolean }
+    recastComment.leading = true
+    recastComment.trailing = false
+  }
   if (statements.length === 0) {
     const placeholder = t.emptyStatement()
     placeholder.leadingComments = comments
+    const recastPlaceholder = placeholder as t.EmptyStatement & { comments?: t.Comment[] }
+    recastPlaceholder.comments = comments
     return [placeholder]
   }
   statements[0]!.leadingComments = [...comments, ...(statements[0]!.leadingComments ?? [])]
+  const first = statements[0]! as t.Statement & { comments?: t.Comment[] }
+  first.comments = [...comments, ...(first.comments ?? [])]
   return statements
 }
 

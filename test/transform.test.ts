@@ -5,6 +5,18 @@ function run(source: string, flags: TransformOptions["flags"] = [], options: Par
   return transform(source, { flags, filename: "fixture.tsx", ...options })
 }
 
+it("parses generic arrow parameters in .ts files without JSX ambiguity", () => {
+  const source = "export const make = <T>({ ...args }: { value?: T }) => args"
+  expect(run(source, [], { filename: "fixture.ts" })).toMatchObject({ code: source, changed: false })
+})
+
+it("prints changed Babel 8 TypeScript interface heritage", () => {
+  const source = "interface Props extends React.HTMLAttributes<HTMLButtonElement> {}\nif (FLAG) yes()"
+  const result = run(source, [{ identifier: "FLAG", value: true }])
+  expect(result.code).toContain("interface Props extends React.HTMLAttributes<HTMLButtonElement>")
+  expect(result.code).toContain("yes();")
+})
+
 describe("feature flag matching", () => {
   it("replaces member flags and collapses branches", () => {
     const result = run(
@@ -40,6 +52,13 @@ metadata()
     expect(result.report.importsRemoved).toBe(1)
   })
 
+  it("preserves the file's dominant quote style for a rewritten import", () => {
+    const result = run("import { FLAG } from './flags';\nif (FLAG) yes(); else no();", [
+      { module: "./flags", export: "FLAG", value: false },
+    ])
+    expect(result.code).toBe("import './flags';\nno();\n")
+  })
+
   it("removes the whole import only with explicit side-effect approval", () => {
     const result = run(
       'import { FLAG } from "./flags";\nif (FLAG) yes(); else no();',
@@ -66,7 +85,7 @@ if (featureEnabled(dynamicName)) dynamic()
     ])
     expect(result.code).toContain("yes();")
     expect(result.code).toContain("featureEnabled(dynamicName)")
-    expect(result.code).toContain('import { featureEnabled } from "./flags";')
+    expect(result.code).toContain('import { featureEnabled } from "./flags"')
     expect(result.report.flagsReplaced).toBe(1)
   })
 
@@ -90,6 +109,19 @@ if (client.isEnabled("new-ui", ...loadContexts())) withSpreadContext()`
 if (enabled) yes(); else no()`
     const result = run(source, [{ call: "useFlag", arguments: ["new-ui"], value: false }])
     expect(result.code).toBe("loadContext();\nno();\n")
+  })
+
+  it("drops pure context literals but preserves computed context effects", () => {
+    const source = `function run(email: string) {
+  if (client.isEnabled("new-ui", { email })) yes()
+  if (client.isEnabled("new-ui", { [loadKey()]: email })) computed()
+}`
+    const result = run(source, [
+      { call: "client.isEnabled", arguments: ["new-ui"], value: true },
+    ])
+    expect(result.code).not.toContain("{ email }")
+    expect(result.code).toContain("loadKey();")
+    expect(result.code).toContain("computed()")
   })
 
   it("keeps exact required arguments and rejects missing or different keys", () => {
@@ -125,8 +157,8 @@ if (x) yes(); else no()`
 export { x }
 if (x) yes(); else no()`
     const result = run(source, [{ call: "useFlag", arguments: ["y"], value: false }])
-    expect(result.code).toContain("const x = false;")
-    expect(result.code).toContain("export { x };")
+    expect(result.code).toContain("const x = false")
+    expect(result.code).toContain("export { x }")
     expect(result.code).toContain("no();")
   })
 
@@ -141,6 +173,38 @@ if (client.isEnabled("other")) other()`
     expect(result.report.flagsReplaced).toBe(1)
   })
 
+  it("matches dotted calls rooted in local parameters", () => {
+    const source = `function render(client: Client, context: Context) {
+  if (client.isEnabled("new-ui", context)) yes(); else no()
+}`
+    const result = run(source, [
+      { call: "client.isEnabled", arguments: ["new-ui"], value: false },
+    ])
+    expect(result.code).toBe("function render(client: Client, context: Context) {\n  no();\n}\n")
+  })
+
+  it("matches exact this-rooted method calls", () => {
+    const source = `class Service {
+  run() {
+    if (this.flagResolver.isEnabled("new-ui")) yes(); else no()
+  }
+}`
+    const result = run(source, [
+      { call: "this.flagResolver.isEnabled", arguments: ["new-ui"], value: true },
+    ])
+    expect(result.code).toContain("run() {\n    yes();\n  }")
+  })
+
+  it("does not match a shadowed direct function call", () => {
+    const source = `function render(useFlag: (key: string) => boolean) {
+  return useFlag("new-ui")
+}`
+    expect(run(source, [{ call: "useFlag", arguments: ["new-ui"], value: true }])).toMatchObject({
+      code: source,
+      changed: false,
+    })
+  })
+
   it("resolves imported call aliases and preserves shadowed functions", () => {
     const source = `import { useFlag as readFlag } from "./flags"
 const enabled = readFlag("new-ui")
@@ -152,7 +216,7 @@ if (enabled) yes(); else no()`
       { module: "./flags", call: "useFlag", arguments: ["new-ui"], value: false },
     ])
     expect(result.code).toContain('import "./flags";')
-    expect(result.code).toContain('return readFlag("new-ui");')
+    expect(result.code).toContain('return readFlag("new-ui")')
     expect(result.code).toContain("no();")
     expect(result.report.flagsReplaced).toBe(1)
   })
@@ -172,8 +236,8 @@ if (enabled) yes(); else no()`
 enabled = override()
 if (enabled) yes(); else no()`
     const result = run(source, [{ call: "useFlag", arguments: ["new-ui"], value: true }])
-    expect(result.code).toContain("let enabled = true;")
-    expect(result.code).toContain("enabled = override();")
+    expect(result.code).toContain("let enabled = true")
+    expect(result.code).toContain("enabled = override()")
     expect(result.code).toContain("if (enabled)")
   })
 
@@ -217,11 +281,11 @@ function run(hasFeature: FeatureSet) {
 
 describe("expression safety", () => {
   it.each([
-    ["const value = !!true", "const value = true;\n"],
-    ["const value = !false", "const value = true;\n"],
-    ["const value = !!!true", "const value = false;\n"],
-    ["const value = true === false", "const value = false;\n"],
-    ["const value = true !== false", "const value = true;\n"],
+    ["const value = !!true", "const value = true\n"],
+    ["const value = !false", "const value = true\n"],
+    ["const value = !!!true", "const value = false\n"],
+    ["const value = true === false", "const value = false\n"],
+    ["const value = true !== false", "const value = true\n"],
   ])("folds %s", (source, expected) => {
     expect(run(source).code).toBe(expected)
   })
@@ -238,7 +302,7 @@ describe("expression safety", () => {
 
   it("does not introduce calls hidden by short circuiting", () => {
     expect(run("const a = true || load(); const b = false && load()").code).toBe(
-      "const a = true;\nconst b = false;\n",
+      "const a = true; const b = false\n",
     )
   })
 
@@ -254,10 +318,10 @@ const b = flag || false
 const c = flag && !flag
 const d = flag || !flag`
     const result = run(source)
-    expect(result.code).toContain("const a = flag;")
-    expect(result.code).toContain("const b = flag;")
-    expect(result.code).toContain("const c = false;")
-    expect(result.code).toContain("const d = true;")
+    expect(result.code).toContain("const a = flag")
+    expect(result.code).toContain("const b = flag")
+    expect(result.code).toContain("const c = false")
+    expect(result.code).toContain("const d = true")
   })
 
   it("uses bounded symbolic equivalence for pure propositional formulas", () => {
@@ -267,9 +331,9 @@ const one = (flagA && flagB) || (flagA && !flagB)
 const two = (flagA || flagB) && (flagA || !flagB)
 const three = (flagA && !flagA) || flagB`
     const result = run(source)
-    expect(result.code).toContain("const one = flagA;")
-    expect(result.code).toContain("const two = flagA;")
-    expect(result.code).toContain("const three = flagB;")
+    expect(result.code).toContain("const one = flagA")
+    expect(result.code).toContain("const two = flagA")
+    expect(result.code).toContain("const three = flagB")
   })
 
   it("skips effectful constant rewrites when preservation is disabled", () => {
@@ -282,7 +346,7 @@ const three = (flagA && !flagA) || flagB`
 describe("control flow", () => {
   it("preserves lexical block scope", () => {
     const result = run("if (true) { const value = createValue(); consume(value) }")
-    expect(result.code).toBe("{\n  const value = createValue();\n  consume(value);\n}\n")
+    expect(result.code).toBe("{ const value = createValue(); consume(value) }\n")
   })
 
   it("preserves effect order while collapsing a condition", () => {
@@ -305,12 +369,12 @@ describe("control flow", () => {
 
   it("folds ternaries while retaining effectful tests", () => {
     expect(run("const result = (check(), true) ? newValue : oldValue").code).toBe(
-      "const result = (check(), newValue);\n",
+      "const result = (check(), newValue)\n",
     )
   })
 
   it("simplifies selected loops conservatively", () => {
-    expect(run("while (false) legacyWork(); continueWork()").code).toBe("continueWork();\n")
+    expect(run("while (false) legacyWork(); continueWork()").code).toBe("continueWork()\n")
     expect(run("while ((check(), false)) legacyWork()").code).toBe("check();\n")
     expect(run("for (initialize(); false; update()) work()").code).toBe("initialize();\n")
     expect(run("do { work() } while (false)").code).toBe("work();\n")
@@ -345,8 +409,8 @@ describe("comments, JSX, and output validity", () => {
 
   it("simplifies JSX children and boolean attributes", () => {
     expect(run("const view = <>{true && <NewPanel />}</>").code).toContain("<NewPanel />")
-    expect(run("const view = <>{false && <LegacyPanel />}</>").code).toBe("const view = <></>;\n")
-    expect(run("const view = <Panel enabled={true} />").code).toBe("const view = <Panel enabled />;\n")
+    expect(run("const view = <>{false && <LegacyPanel />}</>").code).toBe("const view = <></>\n")
+    expect(run("const view = <Panel enabled={true} />").code).toBe("const view = <Panel enabled />\n")
     const effectful = "const view = <>{load() || true}</>"
     expect(run(effectful)).toMatchObject({ code: effectful, changed: false })
   })
