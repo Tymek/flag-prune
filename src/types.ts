@@ -39,6 +39,8 @@ export interface FlagCleanConfig {
   flags: FlagDefinition[]
   preserveEffects?: boolean
   removeUnusedImports?: boolean
+  /** Remove an import declaration after its last configured binding is removed. */
+  removeSideEffectImports?: boolean
   commentPolicy?: CommentPolicy
   maxPasses?: number
   solverVariableLimit?: number

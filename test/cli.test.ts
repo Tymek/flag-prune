@@ -47,7 +47,7 @@ describe("flag-clean process", () => {
     const result = await invoke(["--config", "flags.json", "input.ts"], cwd)
     expect(result.code).toBe(0)
     expect(result.stdout).toContain("--- a/input.ts\tbefore")
-    expect(result.stdout).toContain("1 flags replaced")
+    expect(result.stdout).toContain("1 flag replaced")
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toContain("if (FLAG)")
   })
 
@@ -56,7 +56,7 @@ describe("flag-clean process", () => {
     const first = await invoke(["--config", "flags.json", "--write", "--no-diff", "input.ts"], cwd)
     const second = await invoke(["--config", "flags.json", "--write", "--no-diff", "input.ts"], cwd)
     expect(first.code).toBe(0)
-    expect(first.stdout).toContain("1 files changed")
+    expect(first.stdout).toContain("1 file changed")
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
     expect(second.stdout).toContain("0 files changed")
   })
@@ -73,5 +73,52 @@ describe("flag-clean process", () => {
     const result = await invoke(["--wat"])
     expect(result.code).toBe(2)
     expect(result.stderr).toContain("unknown option: --wat")
+  })
+
+  it("runs without a config for a direct member flag", async () => {
+    const cwd = await fixture()
+    await writeFile(
+      join(cwd, "input.ts"),
+      "if (hasFeature.newAccess) yes(); else no();\n",
+    )
+    const result = await invoke(["--flag", "hasFeature.newAccess=true", "--write", "input.ts"], cwd)
+    expect(result.code).toBe(0)
+    expect(result.stdout).not.toContain("--- a/input.ts")
+    expect(result.stderr).toBe("")
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
+  })
+
+  it("supports an import-backed direct flag selector", async () => {
+    const cwd = await fixture()
+    await writeFile(join(cwd, "input.ts"), 'import { FLAG } from "./flags"; if (FLAG) yes(); else no();\n')
+    const result = await invoke(["--flag", "./flags#FLAG=false", "--write", "input.ts"], cwd)
+    expect(result.code).toBe(0)
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe('import "./flags";\nno();\n')
+  })
+
+  it("supports equals syntax and repeated direct flags", async () => {
+    const cwd = await fixture()
+    await writeFile(join(cwd, "input.ts"), "if (A && B) yes(); else no();\n")
+    const result = await invoke(["--flag=A=true", "--flag=B=false", "--write", "input.ts"], cwd)
+    expect(result.code).toBe(0)
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("no();\n")
+    expect(result.stdout).toContain("2 flags replaced")
+  })
+
+  it("auto-loads flag-clean.config.json when direct flags are absent", async () => {
+    const cwd = await fixture()
+    await writeFile(join(cwd, "flag-clean.config.json"), await readFile(join(cwd, "flags.json")))
+    const result = await invoke(["--write", "input.ts"], cwd)
+    expect(result.code).toBe(0)
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
+  })
+
+  it("explains how to configure a missing flag", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "flag-clean-cli-"))
+    temporaryDirectories.push(cwd)
+    await writeFile(join(cwd, "input.ts"), "work()\n")
+    const result = await invoke(["input.ts"], cwd)
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain("use --flag NAME.path=true or --config <path>")
   })
 })

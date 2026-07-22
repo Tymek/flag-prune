@@ -211,6 +211,19 @@ export function requiredEffects(node: t.Expression): t.Expression[] {
   if (t.isUnaryExpression(value, { operator: "!" }) && t.isExpression(value.argument)) {
     return requiredEffects(value.argument)
   }
+  if (t.isLogicalExpression(value)) {
+    const left = constantOf(value.left)
+    if (value.operator === "&&") {
+      if (left === false) return requiredEffects(value.left)
+      if (left === true) return [...requiredEffects(value.left), ...requiredEffects(value.right)]
+      if (constantOf(value.right) === false) return [value.left]
+    }
+    if (value.operator === "||") {
+      if (left === true) return requiredEffects(value.left)
+      if (left === false) return [...requiredEffects(value.left), ...requiredEffects(value.right)]
+      if (constantOf(value.right) === true) return [value.left]
+    }
+  }
   return [node]
 }
 

@@ -32,19 +32,28 @@ metadata()
     expect(result.report.importsRemoved).toBe(1)
   })
 
-  it("removes an import used only by a configured flag", () => {
+  it("preserves module evaluation when removing the last configured import binding", () => {
     const result = run('import { FLAG } from "./flags";\nif (FLAG) yes(); else no();', [
       { module: "./flags", export: "FLAG", value: false },
     ])
-    expect(result.code).toBe("no();\n")
+    expect(result.code).toBe('import "./flags";\nno();\n')
     expect(result.report.importsRemoved).toBe(1)
+  })
+
+  it("removes the whole import only with explicit side-effect approval", () => {
+    const result = run(
+      'import { FLAG } from "./flags";\nif (FLAG) yes(); else no();',
+      [{ module: "./flags", export: "FLAG", value: false }],
+      { removeSideEffectImports: true },
+    )
+    expect(result.code).toBe("no();\n")
   })
 
   it("matches namespace imports", () => {
     const result = run('import * as features from "./flags";\nfeatures.FLAG ? yes() : no();', [
       { module: "./flags", export: "FLAG", value: true },
     ])
-    expect(result.code).toBe("yes();\n")
+    expect(result.code).toBe('import "./flags";\nyes();\n')
   })
 
   it("matches approved calls with exact static arguments", () => {
@@ -103,10 +112,14 @@ describe("expression safety", () => {
     expect(run(source).code).toBe(expected)
   })
 
-  it("preserves calls and getter reads before absorbing constants", () => {
-    expect(run("const a = load() || true").code).toBe("const a = (load(), true);\n")
-    expect(run("const b = load() && false").code).toBe("const b = (load(), false);\n")
-    expect(run("const c = object.enabled || true").code).toBe("const c = (object.enabled, true);\n")
+  it("preserves unknown values as well as calls and getter reads", () => {
+    for (const source of [
+      "const a = load() || true",
+      "const b = load() && false",
+      "const c = object.enabled || true",
+    ]) {
+      expect(run(source)).toMatchObject({ code: source, changed: false })
+    }
   })
 
   it("does not introduce calls hidden by short circuiting", () => {
@@ -220,7 +233,8 @@ describe("comments, JSX, and output validity", () => {
     expect(run("const view = <>{true && <NewPanel />}</>").code).toContain("<NewPanel />")
     expect(run("const view = <>{false && <LegacyPanel />}</>").code).toBe("const view = <></>;\n")
     expect(run("const view = <Panel enabled={true} />").code).toBe("const view = <Panel enabled />;\n")
-    expect(run("const view = <>{load() || true}</>").code).toContain("{(load(), true)}")
+    const effectful = "const view = <>{load() || true}</>"
+    expect(run(effectful)).toMatchObject({ code: effectful, changed: false })
   })
 
   it("parses modern TSX and emits parseable output", () => {

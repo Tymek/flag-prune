@@ -51,7 +51,7 @@ export function validateConfig(input: unknown): FlagCleanConfig {
   if (value.commentPolicy !== undefined && !commentPolicies.includes(String(value.commentPolicy))) {
     fail("commentPolicy must be report, preserve, or discard")
   }
-  for (const key of ["preserveEffects", "removeUnusedImports"] as const) {
+  for (const key of ["preserveEffects", "removeUnusedImports", "removeSideEffectImports"] as const) {
     if (value[key] !== undefined && typeof value[key] !== "boolean") fail(`${key} must be boolean`)
   }
   for (const key of ["maxPasses", "solverVariableLimit"] as const) {

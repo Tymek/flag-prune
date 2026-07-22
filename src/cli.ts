@@ -6,17 +6,19 @@ import { fileURLToPath } from "node:url"
 import { createTwoFilesPatch } from "diff"
 import { validateConfig } from "./config.js"
 import { transform } from "./transform.js"
-import type { TransformReport, VerificationConfig } from "./types.js"
+import type { FlagCleanConfig, FlagDefinition, TransformReport, VerificationConfig } from "./types.js"
 
 const VERSION = "1.0.0"
 const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"])
 const IGNORED_DIRECTORIES = new Set([".git", "node_modules", "dist", "coverage"])
 
 interface CliArguments {
-  configPath: string
+  configPath: string | undefined
+  directFlags: FlagDefinition[]
   write: boolean
   check: boolean
   diff: boolean
+  diffExplicit: boolean
   json: boolean
   help: boolean
   version: boolean
@@ -42,8 +44,13 @@ const HELP = `Usage: flag-clean [options] <file-or-directory...>
 
 Safely replace configured feature flags and remove dead code.
 
+Quick start:
+  flag-clean --flag hasFeature.newAccess=true src
+  flag-clean --flag ./flags#NEW_ACCESS=false --write src
+
 Options:
-  -c, --config <path>  Config file (default: flag-clean.config.json)
+  -f, --flag <rule>    Flag rule; repeatable (NAME.path=true or module#EXPORT=false)
+  -c, --config <path>  JSON config (auto-detected when no --flag is given)
   -w, --write          Write changes atomically
       --check          Exit 1 when files would change
       --diff           Print unified diffs (default in dry-run mode)
@@ -58,16 +65,51 @@ Options:
 
 function requireValue(args: string[], index: number, option: string): string {
   const value = args[index + 1]
-  if (value === undefined || value.startsWith("-")) throw new Error(`${option} requires a path`)
+  if (value === undefined || value.startsWith("-")) throw new Error(`${option} requires a value`)
   return value
+}
+
+function parseDirectFlag(rule: string): FlagDefinition {
+  const separator = rule.lastIndexOf("=")
+  const rawSelector = separator < 0 ? "" : rule.slice(0, separator)
+  const rawValue = separator < 0 ? "" : rule.slice(separator + 1)
+  if (rawSelector.length === 0 || (rawValue !== "true" && rawValue !== "false")) {
+    throw new Error(`invalid --flag rule: ${rule}; expected NAME.path=true or module#EXPORT=false`)
+  }
+
+  const optional = rawSelector.includes("?.")
+  const selector = rawSelector.replaceAll("?.", ".")
+  const moduleSeparator = selector.indexOf("#")
+  const moduleName = moduleSeparator < 0 ? undefined : selector.slice(0, moduleSeparator)
+  const access = moduleSeparator < 0 ? selector : selector.slice(moduleSeparator + 1)
+  const parts = access.split(".")
+  if (
+    moduleName === "" ||
+    parts.length === 0 ||
+    parts.some((part) => !/^[$A-Z_a-z][$\w]*$/.test(part))
+  ) {
+    throw new Error(`invalid --flag selector: ${rawSelector}`)
+  }
+
+  const [root, ...path] = parts as [string, ...string[]]
+  const shared = {
+    ...(path.length === 0 ? {} : { path }),
+    ...(optional ? { optional: true } : {}),
+    value: rawValue === "true",
+  }
+  return moduleName === undefined
+    ? { identifier: root, ...shared }
+    : { module: moduleName, export: root, ...shared }
 }
 
 function parseArguments(args: string[]): CliArguments {
   const result: CliArguments = {
-    configPath: "flag-clean.config.json",
+    configPath: undefined,
+    directFlags: [],
     write: false,
     check: false,
     diff: true,
+    diffExplicit: false,
     json: false,
     help: false,
     version: false,
@@ -83,10 +125,20 @@ function parseArguments(args: string[]): CliArguments {
     if (argument === "-c" || argument === "--config") {
       result.configPath = requireValue(args, index, argument)
       index += 1
+    } else if (argument === "-f" || argument === "--flag") {
+      result.directFlags.push(parseDirectFlag(requireValue(args, index, argument)))
+      index += 1
+    } else if (argument.startsWith("--flag=")) {
+      result.directFlags.push(parseDirectFlag(argument.slice("--flag=".length)))
     } else if (argument === "-w" || argument === "--write") result.write = true
     else if (argument === "--check") result.check = true
-    else if (argument === "--diff") result.diff = true
-    else if (argument === "--no-diff") result.diff = false
+    else if (argument === "--diff") {
+      result.diff = true
+      result.diffExplicit = true
+    } else if (argument === "--no-diff") {
+      result.diff = false
+      result.diffExplicit = true
+    }
     else if (argument === "--json") result.json = true
     else if (argument === "--typecheck") result.verification.typecheck = true
     else if (argument === "--lint") result.verification.lint = true
@@ -97,6 +149,7 @@ function parseArguments(args: string[]): CliArguments {
     else result.targets.push(argument)
   }
   if (result.json) result.diff = false
+  else if (result.write && !result.diffExplicit) result.diff = false
   return result
 }
 
@@ -168,16 +221,40 @@ function aggregateReports(results: FileResult[]): Omit<TransformReport, "filenam
 }
 
 function humanSummary(report: ReturnType<typeof aggregateReports>): string {
+  const count = (value: number, singular: string, plural = `${singular}s`) =>
+    `${value} ${value === 1 ? singular : plural}`
   return [
-    `${report.filesChanged} files changed`,
-    `${report.flagsReplaced} flags replaced`,
-    `${report.expressionsFolded} expressions folded`,
-    `${report.deadBranchesRemoved} dead branches removed`,
-    `${report.importsRemoved} imports removed`,
-    `${report.effectsPreserved} effectful expressions preserved`,
-    `${report.removedComments.filter((comment) => !comment.retained).length} comments removed and reported`,
-    `${report.warnings.length} warnings`,
+    `${count(report.filesChanged, "file")} changed`,
+    `${count(report.flagsReplaced, "flag")} replaced`,
+    `${count(report.expressionsFolded, "expression")} folded`,
+    `${count(report.deadBranchesRemoved, "dead branch", "dead branches")} removed`,
+    `${count(report.importsRemoved, "import")} removed`,
+    `${count(report.effectsPreserved, "effectful expression")} preserved`,
+    `${count(report.removedComments.filter((comment) => !comment.retained).length, "comment")} removed and reported`,
+    count(report.warnings.length, "warning"),
   ].join("\n")
+}
+
+async function loadConfig(parsed: CliArguments, cwd: string): Promise<FlagCleanConfig> {
+  let configured: FlagCleanConfig = { flags: [] }
+  if (parsed.configPath !== undefined) {
+    const path = resolve(cwd, parsed.configPath)
+    configured = validateConfig(JSON.parse(await readFile(path, "utf8")))
+  } else if (parsed.directFlags.length === 0) {
+    const defaultPath = resolve(cwd, "flag-clean.config.json")
+    if (await pathExists(defaultPath)) {
+      configured = validateConfig(JSON.parse(await readFile(defaultPath, "utf8")))
+    }
+  }
+
+  const config = validateConfig({
+    ...configured,
+    flags: [...parsed.directFlags, ...configured.flags],
+  })
+  if (config.flags.length === 0) {
+    throw new Error("no flags configured; use --flag NAME.path=true or --config <path>")
+  }
+  return config
 }
 
 async function commandExists(path: string): Promise<boolean> {
@@ -265,8 +342,7 @@ export async function runCli(
       return 0
     }
     if (parsed.targets.length === 0) throw new Error("provide at least one file or directory")
-    const configPath = resolve(io.cwd, parsed.configPath)
-    const config = validateConfig(JSON.parse(await readFile(configPath, "utf8")))
+    const config = await loadConfig(parsed, io.cwd)
     const files = await collectFiles(io.cwd, parsed.targets)
     if (files.length === 0) throw new Error("no JavaScript or TypeScript files found")
 

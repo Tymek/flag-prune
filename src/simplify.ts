@@ -166,11 +166,13 @@ function simplifyLogical(path: NodePath<t.LogicalExpression>, state: PassState):
       (path.node.operator === "&&" && right.node.value === false) ||
       (path.node.operator === "||" && right.node.value === true)
     if (absorbs) {
-      if (isBoolean(left) && isRemovablePure(left)) {
-        replaceExpression(path, t.booleanLiteral(right.node.value), state)
-      } else if (!isRemovablePure(left)) {
-        const replacement = evaluationThen(left, t.booleanLiteral(right.node.value), state, false)
-        if (replacement !== undefined) replaceExpression(path, replacement, state)
+      if (isBoolean(left)) {
+        if (isRemovablePure(left)) {
+          replaceExpression(path, t.booleanLiteral(right.node.value), state)
+        } else {
+          const replacement = evaluationThen(left, t.booleanLiteral(right.node.value), state, false)
+          if (replacement !== undefined) replaceExpression(path, replacement, state)
+        }
       }
       return
     }

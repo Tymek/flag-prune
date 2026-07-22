@@ -136,6 +136,7 @@ function moveImportComments(declarationPath: NodePath<t.ImportDeclaration>): voi
 function cleanupImports(
   programPath: NodePath<t.Program>,
   candidates: Set<t.ImportSpecifier | t.ImportDefaultSpecifier | t.ImportNamespaceSpecifier>,
+  removeSideEffectImports: boolean,
   report: TransformReport,
 ): void {
   programPath.scope.crawl()
@@ -150,7 +151,7 @@ function cleanupImports(
     const removed = originalCount - statementPath.node.specifiers.length
     if (removed === 0) continue
     report.importsRemoved += removed
-    if (statementPath.node.specifiers.length === 0) {
+    if (statementPath.node.specifiers.length === 0 && removeSideEffectImports) {
       moveImportComments(statementPath)
       statementPath.remove()
     }
@@ -170,7 +171,7 @@ function cleanupBindings(
     VariableDeclarator(path) {
       if (!t.isIdentifier(path.node.id) || !identifiers.has(path.node.id)) return
       const binding = path.scope.getBinding(path.node.id.name)
-      if (binding?.referenced === true) return
+      if (binding?.referenced === true || binding?.constant !== true) return
       const declaration = path.parentPath
       if (!declaration.isVariableDeclaration() || declaration.node.declarations.length !== 1) return
       const initializer = path.get("init")
@@ -230,7 +231,12 @@ export function transform(source: string, options: TransformOptions): TransformR
   }
 
   if (config.removeUnusedImports ?? true) {
-    cleanupImports(programPathFor(ast), matcherSet.importCandidates, report)
+    cleanupImports(
+      programPathFor(ast),
+      matcherSet.importCandidates,
+      config.removeSideEffectImports ?? false,
+      report,
+    )
   }
   cleanupBindings(ast, matchedBindings, report)
   totalChanges += report.importsRemoved + report.bindingsRemoved

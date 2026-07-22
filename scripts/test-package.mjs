@@ -35,7 +35,7 @@ try {
   )
   const cli = join(consumer, "node_modules", ".bin", process.platform === "win32" ? "flag-clean.cmd" : "flag-clean")
   const cliResult = await run(cli, ["--config", "flags.json", "--write", "input.js"], { cwd: consumer })
-  assert.match(cliResult.stdout, /1 flags replaced/)
+  assert.match(cliResult.stdout, /1 flag replaced/)
   assert.equal(await readFile(join(consumer, "input.js"), "utf8"), "no();\n")
 } finally {
   await rm(temporary, { recursive: true, force: true })
