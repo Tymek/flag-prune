@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
 import { constants as fsConstants, realpathSync, writeSync } from "node:fs"
-import { access, chmod, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises"
+import { access, chmod, readFile, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises"
 import { dirname, extname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseExpression } from "@babel/parser"
@@ -325,12 +325,13 @@ async function collectFiles(
 }
 
 async function atomicWrite(path: string, contents: string): Promise<void> {
-  const info = await stat(path)
-  const temporary = join(dirname(path), `.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.flag-prune`)
+  const targetPath = await realpath(path)
+  const info = await stat(targetPath)
+  const temporary = join(dirname(targetPath), `.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.flag-prune`)
   try {
     await writeFile(temporary, contents, { mode: info.mode })
     await chmod(temporary, info.mode)
-    await rename(temporary, path)
+    await rename(temporary, targetPath)
   } catch (error) {
     await unlink(temporary).catch(() => undefined)
     throw error
@@ -508,10 +509,21 @@ export async function runCli(
       results.push({ path, source, ...result })
     }
     const report = aggregateReports(results)
+    const changed = results.filter((result) => result.changed)
 
-    if (parsed.write) {
-      for (const result of results) if (result.changed) await atomicWrite(result.path, result.code)
+    const verificationRequested =
+      Object.values(parsed.verification).some(Boolean) ||
+      Boolean(config.verify?.typecheck || config.verify?.lint || config.verify?.tests)
+    const persistForVerification = verificationRequested && !parsed.write && changed.length > 0
+    const applied = (parsed.write && changed.length > 0) || persistForVerification
+
+    if (applied) {
+      for (const result of changed) await atomicWrite(result.path, result.code)
     }
+    if (persistForVerification) {
+      io.stderr.write("flag-prune: verifying transformed output without persisting changes\n")
+    }
+
     if (parsed.diff) {
       for (const result of results) {
         if (!result.changed) continue
@@ -520,19 +532,31 @@ export async function runCli(
       }
     }
     if (parsed.json) {
-      io.stdout.write(`${JSON.stringify({ report, files: results.map(({ path, changed, report: fileReport }) => ({ path, changed, report: fileReport })) }, null, 2)}\n`)
+      io.stdout.write(`${JSON.stringify({ report, files: results.map(({ path, changed: fileChanged, report: fileReport }) => ({ path, changed: fileChanged, report: fileReport })) }, null, 2)}\n`)
     } else {
       io.stdout.write(`${humanSummary(report)}\n`)
       for (const warning of report.warnings) io.stderr.write(`warning: ${warning}\n`)
     }
 
-    const verificationRequested =
-      Object.values(parsed.verification).some(Boolean) ||
-      Boolean(config.verify?.typecheck || config.verify?.lint || config.verify?.tests)
-    if (verificationRequested && !parsed.write && report.filesChanged > 0) {
-      throw new Error("verification of changed output requires --write")
+    const restore = async (): Promise<void> => {
+      for (const result of changed) await atomicWrite(result.path, result.source)
     }
-    await runVerification(io.cwd, config.verify, parsed.verification)
+    if (verificationRequested) {
+      try {
+        await runVerification(io.cwd, config.verify, parsed.verification)
+      } catch (error) {
+        if (applied) {
+          await restore()
+          io.stderr.write(
+            parsed.write
+              ? "flag-prune: verification failed; rolled back written changes\n"
+              : "flag-prune: verification failed; discarded transformed output\n",
+          )
+        }
+        throw error
+      }
+      if (persistForVerification) await restore()
+    }
     return parsed.check && report.filesChanged > 0 ? 1 : 0
   } catch (error) {
     io.stderr.write(`flag-prune: ${error instanceof Error ? error.message : String(error)}\n`)

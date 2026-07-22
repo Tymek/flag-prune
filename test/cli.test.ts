@@ -283,4 +283,43 @@ describe("flag-prune process", () => {
     expect(result.code).toBe(0)
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toContain('import { FLAG } from "./flags"')
   })
+
+  it("rolls back written changes when verification fails", async () => {
+    const cwd = await fixture()
+    const original = "if (FLAG) yes(); else no();\n"
+    await writeFile(join(cwd, "input.ts"), original)
+    await writeFile(
+      join(cwd, "flags.json"),
+      JSON.stringify({ flags: [{ identifier: "FLAG", value: true }], verify: { typecheck: "grep -q FLAG input.ts" } }),
+    )
+    const result = await invoke(["--config", "flags.json", "--write", "--no-diff", "input.ts"], cwd)
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain("rolled back written changes")
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe(original)
+  })
+
+  it("verifies transformed output on a dry run and restores the source", async () => {
+    const cwd = await fixture()
+    const original = "if (FLAG) yes(); else no();\n"
+    await writeFile(join(cwd, "input.ts"), original)
+    await writeFile(
+      join(cwd, "flags.json"),
+      JSON.stringify({ flags: [{ identifier: "FLAG", value: true }], verify: { typecheck: "! grep -q FLAG input.ts" } }),
+    )
+    const result = await invoke(["--config", "flags.json", "--no-diff", "input.ts"], cwd)
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain("verifying transformed output without persisting")
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe(original)
+  })
+
+  it("preserves a symlink target when writing through it", async () => {
+    const cwd = await fixture()
+    const { lstat, symlink } = await import("node:fs/promises")
+    await writeFile(join(cwd, "real.ts"), "if (FLAG) yes(); else no();\n")
+    await symlink(join(cwd, "real.ts"), join(cwd, "link.ts"))
+    const result = await invoke(["--config", "flags.json", "--write", "--no-diff", "link.ts"], cwd)
+    expect(result.code).toBe(0)
+    expect((await lstat(join(cwd, "link.ts"))).isSymbolicLink()).toBe(true)
+    expect(await readFile(join(cwd, "real.ts"), "utf8")).toBe("yes();\n")
+  })
 })
