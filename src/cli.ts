@@ -48,11 +48,12 @@ const HELP = `Usage: flag-prune [options] <file-or-directory...>
 Safely replace configured feature flags and remove dead code.
 
 Quick start:
-  npx flag-prune --flag hasFeature.newAccess=true src
+  npx flag-prune --flag hasFeature.newAccess src
   npx flag-prune --flag 'useFlag("new-access")=false' --write src
 
 Options:
-  -f, --flag <rule>    Flag rule; repeatable (NAME.path=true or 'CALL("key")=false')
+  -f, --flag <rule>    Flag rule; repeatable; value defaults to true
+                        (NAME.path[=true|false] or 'CALL("key")[=true|false]')
   -c, --config <path>  JSON config (auto-detected when no --flag is given)
   -w, --write          Write changes atomically
       --check          Exit 1 when files would change
@@ -121,11 +122,15 @@ function parseDirectCall(
 }
 
 function parseDirectFlag(rule: string): FlagDefinition {
-  const separator = rule.lastIndexOf("=")
-  const rawSelector = separator < 0 ? "" : rule.slice(0, separator)
-  const rawValue = separator < 0 ? "" : rule.slice(separator + 1)
-  if (rawSelector.length === 0 || (rawValue !== "true" && rawValue !== "false")) {
-    throw new Error(`invalid --flag rule: ${rule}; expected NAME.path=true or CALL("key")=false`)
+  const falseSuffix = "=false"
+  const trueSuffix = "=true"
+  const hasFalseSuffix = rule.endsWith(falseSuffix)
+  const hasTrueSuffix = rule.endsWith(trueSuffix)
+  const suffixLength = hasFalseSuffix ? falseSuffix.length : hasTrueSuffix ? trueSuffix.length : 0
+  const rawSelector = suffixLength === 0 ? rule : rule.slice(0, -suffixLength)
+  const flagValue = !hasFalseSuffix
+  if (rawSelector.length === 0) {
+    throw new Error(`invalid --flag rule: ${rule}; expected NAME.path or CALL("key")`)
   }
 
   const opening = rawSelector.indexOf("(")
@@ -137,7 +142,7 @@ function parseDirectFlag(rule: string): FlagDefinition {
   const moduleName = moduleSeparator < 0 ? undefined : rawSelector.slice(0, moduleSeparator)
   const rawAccess = moduleSeparator < 0 ? rawSelector : rawSelector.slice(moduleSeparator + 1)
   if (moduleName === "") throw new Error(`invalid --flag selector: ${rawSelector}`)
-  const directCall = parseDirectCall(rawAccess, moduleName, rawValue === "true", rule)
+  const directCall = parseDirectCall(rawAccess, moduleName, flagValue, rule)
   if (directCall !== undefined) return directCall
   const optional = rawAccess.includes("?.")
   const access = rawAccess.replaceAll("?.", ".")
@@ -153,7 +158,7 @@ function parseDirectFlag(rule: string): FlagDefinition {
   const shared = {
     ...(path.length === 0 ? {} : { path }),
     ...(optional ? { optional: true } : {}),
-    value: rawValue === "true",
+    value: flagValue,
   }
   return moduleName === undefined
     ? { identifier: root, ...shared }
@@ -313,7 +318,7 @@ async function loadConfig(parsed: CliArguments, cwd: string): Promise<FlagCleanC
     flags: [...parsed.directFlags, ...configured.flags],
   })
   if (config.flags.length === 0) {
-    throw new Error("no flags configured; use --flag NAME.path=true or --config <path>")
+    throw new Error("no flags configured; use --flag NAME.path[=true|false] or --config <path>")
   }
   return config
 }

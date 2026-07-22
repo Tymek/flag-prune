@@ -198,6 +198,7 @@ export function matchCall(
   if (access === undefined || !bindingMatches(path, access, matcher)) return false
   const optional = access.optional || (t.isOptionalCallExpression(path.node) && path.node.optional === true)
   if (optional !== matcher.optional || !sameProperties(access.properties, matcher.properties)) return false
-  if (path.node.arguments.length !== matcher.arguments.length) return false
-  return path.node.arguments.every((argument, index) => argumentMatches(argument, matcher.arguments[index]!))
+  if (path.node.arguments.length < matcher.arguments.length) return false
+  if (optional && path.node.arguments.length > matcher.arguments.length) return false
+  return matcher.arguments.every((expected, index) => argumentMatches(path.node.arguments[index]!, expected))
 }

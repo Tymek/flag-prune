@@ -99,6 +99,27 @@ describe("flag-prune process", () => {
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("no();\n")
   })
 
+  it("defaults an omitted value to true and accepts trailing caller arguments", async () => {
+    const cwd = await fixture()
+    await writeFile(
+      join(cwd, "input.ts"),
+      'function render(context: object) { const x = useFlag("new-ui", context); if (x) yes(); else no() }\n',
+    )
+    const result = await invoke(["--flag", 'useFlag("new-ui")', "--write", "input.ts"], cwd)
+    expect(result).toMatchObject({ code: 0, stderr: "" })
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe(
+      "function render(context: object) {\n  yes();\n}\n",
+    )
+  })
+
+  it("defaults an omitted member value to true", async () => {
+    const cwd = await fixture()
+    await writeFile(join(cwd, "input.ts"), "if (hasFeature.newUi) yes(); else no();\n")
+    const result = await invoke(["--flag", "hasFeature.newUi", "--write", "input.ts"], cwd)
+    expect(result.code).toBe(0)
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
+  })
+
   it("accepts dotted call rules with static primitive arguments", async () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "input.ts"), 'if (flags.enabled("new-ui", -1, null)) yes(); else no();\n')
@@ -173,6 +194,6 @@ describe("flag-prune process", () => {
     await writeFile(join(cwd, "input.ts"), "work()\n")
     const result = await invoke(["input.ts"], cwd)
     expect(result.code).toBe(2)
-    expect(result.stderr).toContain("use --flag NAME.path=true or --config <path>")
+    expect(result.stderr).toContain("use --flag NAME.path[=true|false] or --config <path>")
   })
 })

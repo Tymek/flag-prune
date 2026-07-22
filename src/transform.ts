@@ -2,7 +2,7 @@ import generate from "@babel/generator"
 import { parse } from "@babel/parser"
 import traverse, { type Binding, type NodePath } from "@babel/traverse"
 import * as t from "@babel/types"
-import { isRemovablePure } from "./analysis.js"
+import { constantOf, isRemovablePure, requiredEffects } from "./analysis.js"
 import { validateConfig } from "./config.js"
 import { buildMatchers, matchCall, matchValue, type FlagMatcher } from "./matchers.js"
 import { simplifyPass } from "./simplify.js"
@@ -52,7 +52,7 @@ interface ReplacementState {
 
 function replacementFor(path: NodePath<t.Expression>, matcher: FlagMatcher, state: ReplacementState): boolean {
   if (matcher.kind !== "value" || !matchValue(path, matcher)) return false
-  const replacement = t.booleanLiteral(matcher.flag.value)
+  const replacement = t.booleanLiteral(matcher.flag.value ?? true)
   t.inheritsComments(replacement, path.node)
   path.replaceWith(replacement)
   if (matcher.binding !== undefined) state.matchedBindings.add(matcher.binding)
@@ -66,16 +66,27 @@ function callReplacement(
   state: ReplacementState,
 ): boolean {
   if (matcher.kind !== "call" || !matchCall(path, matcher)) return false
+  const value = matcher.flag.value ?? true
   const parent = path.parentPath
   if (parent.isVariableDeclarator() && parent.node.init === path.node && t.isIdentifier(parent.node.id)) {
     const binding = parent.scope.getBinding(parent.node.id.name)
-    if (binding?.constant === true) state.booleanBindings.set(binding, matcher.flag.value)
+    if (binding?.constant === true) state.booleanBindings.set(binding, value)
   }
-  const replacement = t.booleanLiteral(matcher.flag.value)
+  const effects: t.Expression[] = []
+  for (const argumentPath of path.get("arguments").slice(matcher.arguments.length)) {
+    if (argumentPath.isSpreadElement()) {
+      effects.push(t.arrayExpression([t.spreadElement(argumentPath.node.argument)]))
+    } else if (argumentPath.isExpression() && !isRemovablePure(argumentPath)) {
+      effects.push(argumentPath.node)
+    }
+  }
+  const literal = t.booleanLiteral(value)
+  const replacement = effects.length === 0 ? literal : t.sequenceExpression([...effects, literal])
   t.inheritsComments(replacement, path.node)
   path.replaceWith(replacement)
   if (matcher.binding !== undefined) state.matchedBindings.add(matcher.binding)
   state.report.flagsReplaced += 1
+  state.report.effectsPreserved += effects.length
   return true
 }
 
@@ -205,8 +216,9 @@ function cleanupBindings(
       if (initializer.node !== null && initializer.isExpression() && !isRemovablePure(initializer)) {
         if (declaration.node.declarations.length !== 1) return
         if (!declaration.parentPath.isProgram() && !declaration.parentPath.isBlockStatement()) return
-        declaration.replaceWith(t.expressionStatement(initializer.node))
-        report.effectsPreserved += 1
+        const effects = constantOf(initializer.node) === "unknown" ? [initializer.node] : requiredEffects(initializer.node)
+        declaration.replaceWithMultiple(effects.map((effect) => t.expressionStatement(effect)))
+        report.effectsPreserved += effects.length
       } else if (declaration.node.declarations.length === 1) {
         declaration.remove()
       } else {

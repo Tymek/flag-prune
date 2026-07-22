@@ -5,10 +5,10 @@
 ## Run without installing
 
 ```sh
-npx flag-prune --flag hasFeature.newAccessControl=true src
+npx flag-prune --flag hasFeature.newAccessControl src
 ```
 
-This previews the diff. Apply it after review:
+Omitting `=true` or `=false` defaults to `true`. This previews the diff. Apply it after review:
 
 ```sh
 npx flag-prune --flag hasFeature.newAccessControl=true --write src
@@ -36,10 +36,10 @@ Calls use their exact source shape. Quote the rule so the shell does not interpr
 
 ```sh
 npx flag-prune --flag 'useFlag("new-access")=false' src
-npx flag-prune --flag 'client.isEnabled("new-access")=false' --write src
+npx flag-prune --flag 'client.isEnabled("new-access")' --write src
 ```
 
-Matching is provider-agnostic: any static dotted function name works. The callee, argument count, and every argument must match exactly; arguments must be string, number, boolean, or `null` literals. Dynamic keys stay untouched.
+Matching is provider-agnostic: any static dotted function name works. Configured arguments are an exact required prefix and must be string, number, boolean, or `null` literals. Additional caller arguments are allowed, so `client.isEnabled("new-access", context)` matches the second rule. Their evaluation and side effects are preserved. Dynamic keys stay untouched.
 
 Assigned results are propagated safely. For example:
 
@@ -62,8 +62,7 @@ Repeat `--flag` for related flags. For reusable migrations or verification setti
     {
       "module": "./features",
       "export": "hasFeature",
-      "path": ["newAccessControl"],
-      "value": true
+      "path": ["newAccessControl"]
     },
     {
       "module": "./features",
@@ -118,7 +117,7 @@ console.log(result.code)
 console.log(result.report)
 ```
 
-Module-backed definitions match the exact import binding, including aliases, and never match shadowing declarations. Global/identifier definitions bind to the program-level declaration when one exists; otherwise they match only unresolved references. Static calls support dotted callees and require exact primitive arguments. Optional access is matched only with `"optional": true`.
+Module-backed definitions match the exact import binding, including aliases, and never match shadowing declarations. Global/identifier definitions bind to the program-level declaration when one exists; otherwise they match only unresolved references. Static calls support dotted callees and exact primitive argument prefixes. Replacement values default to `true`. Optional access is matched only with `"optional": true`.
 
 ## Safety rules
 

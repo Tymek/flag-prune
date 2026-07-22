@@ -18,12 +18,13 @@ export interface FlagDefinition {
   identifier?: string
   /** Static properties below export/identifier. */
   path?: string[]
-  /** Approved function name. Calls match only exact static arguments. */
+  /** Approved static function name. Arguments are an exact required prefix. */
   call?: string
   arguments?: FlagArgument[]
   /** Required for matching optional member access or optional calls. */
   optional?: boolean
-  value: boolean
+  /** Replacement value. Defaults to true. */
+  value?: boolean
 }
 
 export type CommentPolicy = "report" | "preserve" | "discard"

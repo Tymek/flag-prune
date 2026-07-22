@@ -40,10 +40,10 @@ try {
 
   await writeFile(
     join(consumer, "call.js"),
-    'const enabled = useFlag("new-ui")\nif (enabled) yes(); else no();\n',
+    'const enabled = useFlag("new-ui", context)\nif (enabled) yes(); else no();\n',
   )
-  await run(cli, ["--flag", 'useFlag("new-ui")=true', "--write", "call.js"], { cwd: consumer })
-  assert.equal(await readFile(join(consumer, "call.js"), "utf8"), "yes();\n")
+  await run(cli, ["--flag", 'useFlag("new-ui")', "--write", "call.js"], { cwd: consumer })
+  assert.equal(await readFile(join(consumer, "call.js"), "utf8"), "context;\nyes();\n")
 } finally {
   await rm(temporary, { recursive: true, force: true })
 }

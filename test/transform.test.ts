@@ -56,7 +56,7 @@ metadata()
     expect(result.code).toBe('import "./flags";\nyes();\n')
   })
 
-  it("matches approved calls with exact static arguments", () => {
+  it("matches approved calls with an exact static argument prefix", () => {
     const source = `import { featureEnabled } from "./flags"
 if (featureEnabled("new-access")) yes(); else no()
 if (featureEnabled(dynamicName)) dynamic()
@@ -68,6 +68,36 @@ if (featureEnabled(dynamicName)) dynamic()
     expect(result.code).toContain("featureEnabled(dynamicName)")
     expect(result.code).toContain('import { featureEnabled } from "./flags";')
     expect(result.report.flagsReplaced).toBe(1)
+  })
+
+  it("allows additional call arguments and preserves their effects", () => {
+    const source = `if (client.isEnabled("new-ui", context)) withContext()
+if (client.isEnabled("new-ui", loadContext())) withLoadedContext()
+if (client.isEnabled("new-ui", object.context)) withGetterContext()
+if (client.isEnabled("new-ui", ...loadContexts())) withSpreadContext()`
+    const result = run(source, [
+      { call: "client.isEnabled", arguments: ["new-ui"], value: true },
+    ])
+    expect(result.code).toBe(
+      "context;\nwithContext();\nloadContext();\nwithLoadedContext();\nobject.context;\nwithGetterContext();\n[...loadContexts()];\nwithSpreadContext();\n",
+    )
+    expect(result.report).toMatchObject({ flagsReplaced: 4, deadBranchesRemoved: 4 })
+    expect(result.report.effectsPreserved).toBeGreaterThanOrEqual(4)
+  })
+
+  it("preserves trailing argument effects when removing an assigned result", () => {
+    const source = `const enabled = useFlag("new-ui", loadContext())
+if (enabled) yes(); else no()`
+    const result = run(source, [{ call: "useFlag", arguments: ["new-ui"], value: false }])
+    expect(result.code).toBe("loadContext();\nno();\n")
+  })
+
+  it("keeps exact required arguments and rejects missing or different keys", () => {
+    const source = `client.isEnabled()
+client.isEnabled("other", context)`
+    expect(run(source, [
+      { call: "client.isEnabled", arguments: ["new-ui"], value: true },
+    ])).toMatchObject({ code: source, changed: false })
   })
 
   it("inlines a fixed call result and removes its dead branch and binding", () => {
@@ -366,5 +396,11 @@ describe("configuration", () => {
       validateConfig({ flags: [{ identifier: "FLAG", call: "enabled", value: true }] }),
     ).toThrow(/cannot combine/)
     expect(() => validateConfig({ flags: [{ call: "client[method]", value: true }] })).toThrow(/static dotted/)
+  })
+
+  it("defaults an omitted replacement value to true", () => {
+    const config = validateConfig({ flags: [{ call: "useFlag", arguments: ["new-ui"] }] })
+    expect(config.flags[0]?.value).toBe(true)
+    expect(run('if (useFlag("new-ui")) yes(); else no();', config.flags).code).toBe("yes();\n")
   })
 })
