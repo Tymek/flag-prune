@@ -210,6 +210,7 @@ export function transform(source: string, options: TransformOptions): TransformR
   const matcherSet = buildMatchers(initialProgramPath, config.flags)
   const matchedBindings = replaceFlags(ast, matcherSet.matchers, report)
   const maxPasses = config.maxPasses ?? 20
+  let totalChanges = report.flagsReplaced
 
   for (let pass = 1; pass <= maxPasses; pass += 1) {
     programPathFor(ast).scope.crawl()
@@ -222,6 +223,7 @@ export function transform(source: string, options: TransformOptions): TransformR
       },
       report,
     )
+    totalChanges += changes
     report.passes = pass
     if (changes === 0) break
     if (pass === maxPasses) report.warnings.push(`Fixed point not reached after ${maxPasses} passes`)
@@ -231,6 +233,9 @@ export function transform(source: string, options: TransformOptions): TransformR
     cleanupImports(programPathFor(ast), matcherSet.importCandidates, report)
   }
   cleanupBindings(ast, matchedBindings, report)
+  totalChanges += report.importsRemoved + report.bindingsRemoved
+
+  if (totalChanges === 0) return { code: source, changed: false, report }
 
   const generated = generate(ast, {
     comments: true,

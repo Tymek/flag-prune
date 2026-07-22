@@ -1,12 +1,14 @@
 import { chmod, rm } from "node:fs/promises"
 import { execFile } from "node:child_process"
+import { resolve } from "node:path"
+import process from "node:process"
 import { promisify } from "node:util"
 import { build } from "esbuild"
 
 const run = promisify(execFile)
 
 await rm("dist", { recursive: true, force: true })
-await run("./node_modules/.bin/tsc", ["-p", "tsconfig.build.json"])
+await run(process.execPath, [resolve("node_modules/typescript/bin/tsc"), "-p", "tsconfig.build.json"])
 
 await build({
   entryPoints: [

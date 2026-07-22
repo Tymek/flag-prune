@@ -5,7 +5,7 @@
 ## Install and use
 
 ```sh
-pnpm add -D flagrM
+pnpm add -D flagrm
 ```
 
 Create `feature-flags.json`:

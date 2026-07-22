@@ -61,6 +61,14 @@ if (featureEnabled(dynamicName)) dynamic()
     expect(result.report.flagsReplaced).toBe(1)
   })
 
+  it("returns untouched dynamic source byte-for-byte", () => {
+    const source = "if(featureEnabled(flagName)){ newAccess() }else{ legacyAccess() }\n"
+    const result = run(source, [
+      { call: "featureEnabled", arguments: ["new-access"], value: true },
+    ])
+    expect(result).toMatchObject({ code: source, changed: false })
+  })
+
   it("never replaces a shadowed global member root", () => {
     const source = `if (hasFeature.flag) globalPath()
 function run(hasFeature: FeatureSet) {
@@ -108,9 +116,8 @@ describe("expression safety", () => {
   })
 
   it("does not apply boolean identities to unknown non-booleans", () => {
-    expect(run("const a = value && true; const b = value || false").code).toBe(
-      "const a = value && true;\nconst b = value || false;\n",
-    )
+    const source = "const a = value && true; const b = value || false"
+    expect(run(source)).toMatchObject({ code: source, changed: false })
   })
 
   it("applies identities and complements to stable typed booleans", () => {
