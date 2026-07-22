@@ -474,6 +474,16 @@ export function Panel({ enabled }: Props) {
 }`
     expect(() => run(source)).not.toThrow()
   })
+
+  it("roundtrips TypeScript template literal types", () => {
+    const source = `type Route = \`/\${string}\`
+const path: Route = "/home"
+if (FLAG) go(path); else stay()`
+    const result = run(source, [{ identifier: "FLAG", value: true }])
+    expect(result.code).toContain("type Route = `/${string}`")
+    expect(result.code).toContain("go(path);")
+    expect(result.code).not.toContain("stay()")
+  })
 })
 
 describe("determinism and runtime equivalence", () => {

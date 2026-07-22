@@ -31,6 +31,12 @@ function normalizeBabelAstForRecast(value: unknown): void {
   if (node.type === "TSInterfaceHeritage" || node.type === "TSClassImplements") {
     node.type = "TSExpressionWithTypeArguments"
   }
+  if (node.type === "TSTemplateLiteralType") {
+    node.type = "TSLiteralType"
+    node.literal = { type: "TemplateLiteral", quasis: node.quasis, expressions: node.types }
+    delete node.quasis
+    delete node.types
+  }
   Object.values(node).forEach(normalizeBabelAstForRecast)
 }
 

@@ -540,11 +540,18 @@ export async function runCli(
     }
 
     const results: FileResult[] = []
+    const skipped: string[] = []
     for (const path of files) {
       const source = await readFile(path, "utf8")
-      const result = transform(source, { ...config, filename: relative(io.cwd, path) })
-      results.push({ path, source, ...result })
+      try {
+        const result = transform(source, { ...config, filename: relative(io.cwd, path) })
+        results.push({ path, source, ...result })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        skipped.push(`skipped ${relative(io.cwd, path)}: ${message}`)
+      }
     }
+    for (const warning of skipped) io.stderr.write(`warning: ${warning}\n`)
     const report = aggregateReports(results)
     const changed = results.filter((result) => result.changed)
 
@@ -600,7 +607,7 @@ export async function runCli(
       }
       if (persistForVerification) await restore()
     }
-    if (parsed.strict && (report.warnings.length > 0 || discoveryWarnings.length > 0)) return 2
+    if (parsed.strict && (report.warnings.length > 0 || discoveryWarnings.length > 0 || skipped.length > 0)) return 2
     return parsed.check && report.filesChanged > 0 ? 1 : 0
   } catch (error) {
     io.stderr.write(`flag-prune: ${error instanceof Error ? error.message : String(error)}\n`)
