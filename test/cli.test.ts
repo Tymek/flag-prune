@@ -196,4 +196,49 @@ describe("flag-prune process", () => {
     expect(result.code).toBe(2)
     expect(result.stderr).toContain("use --flag NAME.path[=true|false] or --config <path>")
   })
+
+  it("merges an auto-detected config with direct flags", async () => {
+    const cwd = await fixture()
+    await writeFile(
+      join(cwd, "flag-prune.config.json"),
+      JSON.stringify({ flags: [{ identifier: "FLAG", value: true }] }),
+    )
+    await writeFile(join(cwd, "input.ts"), "if (FLAG && OTHER) yes(); else no();\n")
+    const result = await invoke(["--flag", "OTHER=true", "--write", "input.ts"], cwd)
+    expect(result).toMatchObject({ code: 0, stderr: "" })
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
+  })
+
+  it("skips declaration files", async () => {
+    const cwd = await fixture()
+    await writeFile(join(cwd, "types.d.ts"), "export declare const FLAG: boolean;\n")
+    const result = await invoke(["--config", "flags.json", "--write", "types.d.ts"], cwd)
+    expect(result).toMatchObject({ code: 0 })
+    expect(result.stderr).toContain("no JavaScript or TypeScript files found")
+    expect(await readFile(join(cwd, "types.d.ts"), "utf8")).toBe("export declare const FLAG: boolean;\n")
+  })
+
+  it("treats an empty target set as a benign no-op", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "flag-prune-cli-"))
+    temporaryDirectories.push(cwd)
+    await writeFile(join(cwd, "flags.json"), JSON.stringify({ flags: [{ identifier: "FLAG" }] }))
+    await writeFile(join(cwd, "notes.md"), "# not source\n")
+    const result = await invoke(["--config", "flags.json", "notes.md"], cwd)
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain("no JavaScript or TypeScript files found")
+  })
+
+  it("warns about and skips nested symlinks and honors --ignore", async () => {
+    const cwd = await fixture()
+    await writeFile(join(cwd, "input.ts"), "if (FLAG) yes(); else no();\n")
+    const { mkdir, symlink } = await import("node:fs/promises")
+    await mkdir(join(cwd, "vendor"))
+    await writeFile(join(cwd, "vendor", "input.ts"), "if (FLAG) yes(); else no();\n")
+    await symlink(join(cwd, "input.ts"), join(cwd, "linked.ts"))
+    const result = await invoke(["--config", "flags.json", "--ignore", "vendor", "--write", "."], cwd)
+    expect(result.code).toBe(0)
+    expect(result.stderr).toContain("skipped symlink")
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
+    expect(await readFile(join(cwd, "vendor", "input.ts"), "utf8")).toBe("if (FLAG) yes(); else no();\n")
+  })
 })

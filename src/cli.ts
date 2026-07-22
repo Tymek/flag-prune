@@ -25,6 +25,7 @@ interface CliArguments {
   json: boolean
   help: boolean
   version: boolean
+  ignore: string[]
   verification: { typecheck: boolean; lint: boolean; tests: boolean }
   targets: string[]
 }
@@ -177,6 +178,7 @@ function parseArguments(args: string[]): CliArguments {
     json: false,
     help: false,
     version: false,
+    ignore: [],
     verification: { typecheck: false, lint: false, tests: false },
     targets: [],
   }
@@ -205,7 +207,12 @@ function parseArguments(args: string[]): CliArguments {
     }
     else if (argument === "--json") result.json = true
     else if (argument === "--remove-side-effect-imports") result.removeSideEffectImports = true
-    else if (argument === "--typecheck") result.verification.typecheck = true
+    else if (argument === "--ignore") {
+      result.ignore.push(requireValue(args, index, argument))
+      index += 1
+    } else if (argument.startsWith("--ignore=")) {
+      result.ignore.push(argument.slice("--ignore=".length))
+    } else if (argument === "--typecheck") result.verification.typecheck = true
     else if (argument === "--lint") result.verification.lint = true
     else if (argument === "--test") result.verification.tests = true
     else if (argument === "-h" || argument === "--help") result.help = true
@@ -222,25 +229,47 @@ function comparePaths(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
-async function collectPath(path: string, files: Set<string>): Promise<void> {
+function isDeclarationFile(path: string): boolean {
+  return /\.d\.[cm]?ts$/i.test(path)
+}
+
+interface DiscoveryOptions {
+  ignored: Set<string>
+  warnings: string[]
+}
+
+async function collectPath(path: string, files: Set<string>, options: DiscoveryOptions): Promise<void> {
   const info = await stat(path)
   if (info.isFile()) {
-    if (SOURCE_EXTENSIONS.has(extname(path).toLowerCase())) files.add(path)
+    if (SOURCE_EXTENSIONS.has(extname(path).toLowerCase()) && !isDeclarationFile(path)) files.add(path)
     return
   }
   if (!info.isDirectory()) return
   const entries = await readdir(path, { withFileTypes: true })
   entries.sort((left, right) => comparePaths(left.name, right.name))
   for (const entry of entries) {
-    if (entry.isSymbolicLink() || (entry.isDirectory() && IGNORED_DIRECTORIES.has(entry.name))) continue
-    await collectPath(join(path, entry.name), files)
+    const childPath = join(path, entry.name)
+    if (entry.isSymbolicLink()) {
+      options.warnings.push(`skipped symlink ${childPath}`)
+      continue
+    }
+    if (entry.isDirectory() && options.ignored.has(entry.name)) continue
+    await collectPath(childPath, files, options)
   }
 }
 
-async function collectFiles(cwd: string, targets: string[]): Promise<string[]> {
+async function collectFiles(
+  cwd: string,
+  targets: string[],
+  ignore: string[],
+): Promise<{ files: string[]; warnings: string[] }> {
   const files = new Set<string>()
-  for (const target of targets) await collectPath(resolve(cwd, target), files)
-  return [...files].sort(comparePaths)
+  const options: DiscoveryOptions = {
+    ignored: new Set([...IGNORED_DIRECTORIES, ...ignore]),
+    warnings: [],
+  }
+  for (const target of targets) await collectPath(resolve(cwd, target), files, options)
+  return { files: [...files].sort(comparePaths), warnings: options.warnings }
 }
 
 async function atomicWrite(path: string, contents: string): Promise<void> {
@@ -305,7 +334,7 @@ async function loadConfig(parsed: CliArguments, cwd: string): Promise<FlagCleanC
   if (parsed.configPath !== undefined) {
     const path = resolve(cwd, parsed.configPath)
     configured = validateConfig(JSON.parse(await readFile(path, "utf8")))
-  } else if (parsed.directFlags.length === 0) {
+  } else {
     const defaultPath = resolve(cwd, "flag-prune.config.json")
     if (await pathExists(defaultPath)) {
       configured = validateConfig(JSON.parse(await readFile(defaultPath, "utf8")))
@@ -409,8 +438,12 @@ export async function runCli(
     }
     if (parsed.targets.length === 0) throw new Error("provide at least one file or directory")
     const config = await loadConfig(parsed, io.cwd)
-    const files = await collectFiles(io.cwd, parsed.targets)
-    if (files.length === 0) throw new Error("no JavaScript or TypeScript files found")
+    const { files, warnings: discoveryWarnings } = await collectFiles(io.cwd, parsed.targets, parsed.ignore)
+    for (const warning of discoveryWarnings) io.stderr.write(`warning: ${warning}\n`)
+    if (files.length === 0) {
+      io.stderr.write("flag-prune: no JavaScript or TypeScript files found\n")
+      return 0
+    }
 
     const results: FileResult[] = []
     for (const path of files) {
