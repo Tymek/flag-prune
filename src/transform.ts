@@ -331,6 +331,7 @@ function createReport(filename?: string): TransformReport {
     removedComments: [],
     warnings: [],
     passes: 0,
+    converged: true,
   }
 }
 
@@ -359,7 +360,10 @@ export function transform(source: string, options: TransformOptions): TransformR
     totalChanges += changes
     report.passes = pass
     if (changes === 0) break
-    if (pass === maxPasses) report.warnings.push(`Fixed point not reached after ${maxPasses} passes`)
+    if (pass === maxPasses) {
+      report.converged = false
+      report.warnings.push(`Fixed point not reached after ${maxPasses} passes`)
+    }
   }
 
   if (config.removeUnusedImports ?? true) {

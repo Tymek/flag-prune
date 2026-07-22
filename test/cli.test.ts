@@ -322,4 +322,26 @@ describe("flag-prune process", () => {
     expect((await lstat(join(cwd, "link.ts"))).isSymbolicLink()).toBe(true)
     expect(await readFile(join(cwd, "real.ts"), "utf8")).toBe("yes();\n")
   })
+
+  it("reports binding and unreachable-statement counters", async () => {
+    const cwd = await fixture()
+    await writeFile(
+      join(cwd, "input.ts"),
+      'function f() {\n  const enabled = useFlag("x")\n  if (enabled) return early()\n  dead()\n}\n',
+    )
+    const result = await invoke(["--flag", 'useFlag("x")=true', "input.ts"], cwd)
+    expect(result.code).toBe(0)
+    expect(result.stdout).toContain("1 binding removed")
+    expect(result.stdout).toContain("1 unreachable statement removed")
+  })
+
+  it("fails under --strict when a warning is emitted", async () => {
+    const cwd = await fixture()
+    await writeFile(join(cwd, "input.ts"), "if (FLAG) yes(); else no();\n")
+    const { symlink } = await import("node:fs/promises")
+    await symlink(join(cwd, "input.ts"), join(cwd, "linked.ts"))
+    const result = await invoke(["--config", "flags.json", "--strict", "--no-diff", "."], cwd)
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain("skipped symlink")
+  })
 })

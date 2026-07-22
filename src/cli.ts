@@ -26,6 +26,7 @@ interface CliArguments {
   help: boolean
   version: boolean
   ignore: string[]
+  strict: boolean
   overrides: Partial<FlagCleanConfig>
   verification: { typecheck: boolean; lint: boolean; tests: boolean }
   targets: string[]
@@ -68,6 +69,7 @@ Options:
   -w, --write          Write changes atomically
       --dry-run        Preview only; never write (default; conflicts with -w)
       --check          Exit 1 when files would change
+      --strict         Exit 2 when any warning is emitted
       --diff           Print unified diffs (default in dry-run mode)
       --no-diff        Hide unified diffs (default with --write or --json)
       --json           Print machine-readable report (disables the diff)
@@ -92,7 +94,7 @@ Options:
 Exit codes:
   0  success (no changes, or changes previewed/written)
   1  --check requested and files would change
-  2  usage or processing error
+  2  usage or processing error (also --strict with warnings, or non-convergence)
 `
 
 function requireValue(args: string[], index: number, option: string): string {
@@ -204,6 +206,7 @@ function parseArguments(args: string[]): CliArguments {
     help: false,
     version: false,
     ignore: [],
+    strict: false,
     overrides: {},
     verification: { typecheck: false, lint: false, tests: false },
     targets: [],
@@ -232,6 +235,7 @@ function parseArguments(args: string[]): CliArguments {
     } else if (argument === "-w" || argument === "--write") result.write = true
     else if (argument === "--dry-run") dryRun = true
     else if (argument === "--check") result.check = true
+    else if (argument === "--strict") result.strict = true
     else if (argument === "--diff") {
       result.diff = true
       result.diffExplicit = true
@@ -351,6 +355,7 @@ function aggregateReports(results: FileResult[]): Omit<TransformReport, "filenam
     removedComments: [] as TransformReport["removedComments"],
     warnings: [] as string[],
     passes: 0,
+    converged: true,
   }
   for (const result of results) {
     report.flagsReplaced += result.report.flagsReplaced
@@ -363,6 +368,7 @@ function aggregateReports(results: FileResult[]): Omit<TransformReport, "filenam
     report.removedComments.push(...result.report.removedComments)
     report.warnings.push(...result.report.warnings.map((warning) => `${result.path}: ${warning}`))
     report.passes = Math.max(report.passes, result.report.passes)
+    report.converged = report.converged && result.report.converged
   }
   return report
 }
@@ -375,7 +381,9 @@ function humanSummary(report: ReturnType<typeof aggregateReports>): string {
     `${count(report.flagsReplaced, "flag")} replaced`,
     `${count(report.expressionsFolded, "expression")} folded`,
     `${count(report.deadBranchesRemoved, "dead branch", "dead branches")} removed`,
+    `${count(report.unreachableStatementsRemoved, "unreachable statement")} removed`,
     `${count(report.importsRemoved, "import")} removed`,
+    `${count(report.bindingsRemoved, "binding")} removed`,
     `${count(report.effectsPreserved, "effectful expression")} preserved`,
     `${count(report.removedComments.filter((comment) => !comment.retained).length, "comment")} removed and reported`,
     count(report.warnings.length, "warning"),
@@ -511,6 +519,12 @@ export async function runCli(
     const report = aggregateReports(results)
     const changed = results.filter((result) => result.changed)
 
+    const nonConverged = results.filter((result) => !result.report.converged)
+    if (nonConverged.length > 0) {
+      const names = nonConverged.map((result) => relative(io.cwd, result.path)).join(", ")
+      throw new Error(`transform did not reach a fixed point for: ${names}; raise maxPasses or report a bug`)
+    }
+
     const verificationRequested =
       Object.values(parsed.verification).some(Boolean) ||
       Boolean(config.verify?.typecheck || config.verify?.lint || config.verify?.tests)
@@ -557,6 +571,7 @@ export async function runCli(
       }
       if (persistForVerification) await restore()
     }
+    if (parsed.strict && (report.warnings.length > 0 || discoveryWarnings.length > 0)) return 2
     return parsed.check && report.filesChanged > 0 ? 1 : 0
   } catch (error) {
     io.stderr.write(`flag-prune: ${error instanceof Error ? error.message : String(error)}\n`)

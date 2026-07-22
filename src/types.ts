@@ -76,6 +76,7 @@ export interface TransformReport {
   removedComments: RemovedComment[]
   warnings: string[]
   passes: number
+  converged: boolean
 }
 
 export interface TransformResult {
