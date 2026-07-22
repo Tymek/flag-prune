@@ -4,12 +4,38 @@ function fail(message: string): never {
   throw new TypeError(`Invalid flag-prune config: ${message}`)
 }
 
+const ALLOWED_FLAG_KEYS = new Set([
+  "module",
+  "export",
+  "identifier",
+  "path",
+  "call",
+  "arguments",
+  "optional",
+  "value",
+])
+const ALLOWED_CONFIG_KEYS = new Set([
+  "flags",
+  "simplifyEffectfulConditions",
+  "removeUnusedImports",
+  "removeSideEffectImports",
+  "commentPolicy",
+  "maxPasses",
+  "solverVariableLimit",
+  "verify",
+  "filename",
+])
+const ALLOWED_VERIFY_KEYS = new Set(["parse", "typecheck", "lint", "tests"])
+
 function validateFlag(flag: unknown, index: number): FlagDefinition {
   if (typeof flag !== "object" || flag === null || Array.isArray(flag)) {
     fail(`flags[${index}] must be an object`)
   }
 
   const value = flag as Record<string, unknown>
+  for (const key of Object.keys(value)) {
+    if (!ALLOWED_FLAG_KEYS.has(key)) fail(`flags[${index}] has unknown key "${key}"`)
+  }
   if (value.value !== undefined && typeof value.value !== "boolean") fail(`flags[${index}].value must be boolean`)
   if (value.module !== undefined && typeof value.module !== "string") fail(`flags[${index}].module must be string`)
   if (value.export !== undefined && typeof value.export !== "string") fail(`flags[${index}].export must be string`)
@@ -48,6 +74,9 @@ function validateFlag(flag: unknown, index: number): FlagDefinition {
 export function validateConfig(input: unknown): FlagCleanConfig {
   if (typeof input !== "object" || input === null || Array.isArray(input)) fail("root must be an object")
   const value = input as Record<string, unknown>
+  for (const key of Object.keys(value)) {
+    if (!ALLOWED_CONFIG_KEYS.has(key)) fail(`unknown config key "${key}"`)
+  }
   if (!Array.isArray(value.flags)) fail("flags must be an array")
   const flags = value.flags.map(validateFlag)
   const commentPolicies = ["report", "preserve", "discard"]
@@ -62,8 +91,13 @@ export function validateConfig(input: unknown): FlagCleanConfig {
       fail(`${key} must be a positive integer`)
     }
   }
-  if (value.verify !== undefined && (typeof value.verify !== "object" || value.verify === null || Array.isArray(value.verify))) {
-    fail("verify must be an object")
+  if (value.verify !== undefined) {
+    if (typeof value.verify !== "object" || value.verify === null || Array.isArray(value.verify)) {
+      fail("verify must be an object")
+    }
+    for (const key of Object.keys(value.verify as Record<string, unknown>)) {
+      if (!ALLOWED_VERIFY_KEYS.has(key)) fail(`verify has unknown key "${key}"`)
+    }
   }
 
   return { ...(value as unknown as FlagCleanConfig), flags }

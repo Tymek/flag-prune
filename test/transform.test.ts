@@ -407,6 +407,20 @@ describe("comments, JSX, and output validity", () => {
     )
   })
 
+  it("retains license markers but not incidental copyright prose", () => {
+    const license = run("if (false) { /* SPDX-License-Identifier: MIT */ old() }")
+    expect(license.code).toContain("SPDX-License-Identifier")
+    const author = run("if (false) { /* @author Jane */ old() }")
+    expect(author.code).toContain("@author")
+    const notice = run("if (false) { /* Copyright (c) 2026 Acme */ old() }")
+    expect(notice.code).toContain("Copyright")
+    const prose = run("if (false) { /* no copyright concerns here */ old() }")
+    expect(prose.code).not.toContain("copyright concerns")
+    expect(prose.report.removedComments[0]).toEqual(
+      expect.objectContaining({ value: "no copyright concerns here", retained: false }),
+    )
+  })
+
   it("simplifies JSX children and boolean attributes", () => {
     expect(run("const view = <>{true && <NewPanel />}</>").code).toContain("<NewPanel />")
     expect(run("const view = <>{false && <LegacyPanel />}</>").code).toBe("const view = <></>\n")
@@ -460,6 +474,14 @@ describe("configuration", () => {
       validateConfig({ flags: [{ identifier: "FLAG", call: "enabled", value: true }] }),
     ).toThrow(/cannot combine/)
     expect(() => validateConfig({ flags: [{ call: "client[method]", value: true }] })).toThrow(/static dotted/)
+  })
+
+  it("rejects unknown config, flag, and verify keys", () => {
+    expect(() => validateConfig({ flags: [], preserveEffects: true })).toThrow(/unknown config key "preserveEffects"/)
+    expect(() => validateConfig({ flags: [{ identifier: "FLAG", enabled: true }] })).toThrow(
+      /unknown key "enabled"/,
+    )
+    expect(() => validateConfig({ flags: [], verify: { typo: true } })).toThrow(/verify has unknown key "typo"/)
   })
 
   it("defaults an omitted replacement value to true", () => {

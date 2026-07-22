@@ -220,7 +220,14 @@ function commentsIn(node: t.Node | null | undefined): t.Comment[] {
 }
 
 function protectedComment(comment: t.Comment): boolean {
-  return /\b(?:TODO|FIXME)\b|@license|copyright|^\s*[#@](?:preserve|__PURE__)/i.test(comment.value)
+  const value = comment.value
+  return (
+    /\b(?:TODO|FIXME)\b/.test(value) ||
+    /@(?:license|preserve|author)\b/i.test(value) ||
+    /\bSPDX-License-Identifier\b/i.test(value) ||
+    /©|\(c\)|\bcopyright\b\s*(?:\(c\)|©|\d{4})/i.test(value) ||
+    /^\s*[#@](?:preserve|__PURE__)/.test(value)
+  )
 }
 
 function processRemovedComments(node: t.Node | null | undefined, state: PassState): t.Comment[] {
