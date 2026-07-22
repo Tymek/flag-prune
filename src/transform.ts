@@ -351,7 +351,7 @@ export function transform(source: string, options: TransformOptions): TransformR
       ast,
       {
         commentPolicy: config.commentPolicy ?? "report",
-        preserveEffects: config.preserveEffects ?? true,
+        simplifyEffectfulConditions: config.simplifyEffectfulConditions ?? true,
         solverVariableLimit: config.solverVariableLimit ?? 8,
       },
       report,

@@ -26,6 +26,7 @@ interface CliArguments {
   help: boolean
   version: boolean
   ignore: string[]
+  overrides: Partial<FlagCleanConfig>
   verification: { typecheck: boolean; lint: boolean; tests: boolean }
   targets: string[]
 }
@@ -52,22 +53,46 @@ Quick start:
   npx flag-prune --flag hasFeature.newAccess src
   npx flag-prune --flag 'useFlag("new-access")=false' --write src
 
+Flag rule syntax (repeat --flag for multiple rules):
+  NAME.path[=true|false]          local/global identifier or member access
+  module#EXPORT.path[=true|false] imported binding (aliases resolved)
+  'CALL("key", 1)[=true|false]'   approved call; args are an exact prefix
+  a?.b or CALL?.("k")             optional access; only matches optional form
+  Value defaults to true when '=true|=false' is omitted.
+  Use '=' inline (e.g. --flag=NAME=false) to pass values that start with '-'.
+  Use '--' to end options before file targets.
+
 Options:
-  -f, --flag <rule>    Flag rule; repeatable; value defaults to true
-                        (NAME.path[=true|false] or 'CALL("key")[=true|false]')
-  -c, --config <path>  JSON config (auto-detected when no --flag is given)
+  -f, --flag <rule>    Flag rule (also -f=RULE / --flag=RULE)
+  -c, --config <path>  JSON config (auto-detected and merged with --flag)
   -w, --write          Write changes atomically
+      --dry-run        Preview only; never write (default; conflicts with -w)
       --check          Exit 1 when files would change
       --diff           Print unified diffs (default in dry-run mode)
-      --no-diff        Hide unified diffs
-      --json           Print machine-readable report
+      --no-diff        Hide unified diffs (default with --write or --json)
+      --json           Print machine-readable report (disables the diff)
+      --ignore <name>  Extra directory name to skip; repeatable
+      --comment-policy <report|preserve|discard>
+                        How to handle comments on removed code (default report)
+      --keep-comments  Shortcut for --comment-policy preserve
+      --no-remove-unused-imports
+                        Keep imports even after their flag binding is removed
       --remove-side-effect-imports
                         Delete empty flag imports known to be side-effect-free
-      --typecheck      Run configured/default typecheck after writing
-      --lint           Run configured/default lint after writing
-      --test           Run configured/default tests after writing
+      --skip-effectful-conditions
+                        Leave constant conditions whose test still has effects
+      --max-passes <n>  Cap simplification passes (default 20)
+      --no-parse-check  Skip reparsing the generated output
+      --typecheck      Run configured/default typecheck (requires --write)
+      --lint           Run configured/default lint (requires --write)
+      --test           Run configured/default tests (requires --write)
   -h, --help           Show help
   -v, --version        Show version
+
+Exit codes:
+  0  success (no changes, or changes previewed/written)
+  1  --check requested and files would change
+  2  usage or processing error
 `
 
 function requireValue(args: string[], index: number, option: string): string {
@@ -179,9 +204,11 @@ function parseArguments(args: string[]): CliArguments {
     help: false,
     version: false,
     ignore: [],
+    overrides: {},
     verification: { typecheck: false, lint: false, tests: false },
     targets: [],
   }
+  let dryRun = false
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]!
     if (argument === "--") {
@@ -191,12 +218,19 @@ function parseArguments(args: string[]): CliArguments {
     if (argument === "-c" || argument === "--config") {
       result.configPath = requireValue(args, index, argument)
       index += 1
+    } else if (argument.startsWith("--config=")) {
+      result.configPath = argument.slice("--config=".length)
+    } else if (argument.startsWith("-c=")) {
+      result.configPath = argument.slice("-c=".length)
     } else if (argument === "-f" || argument === "--flag") {
       result.directFlags.push(parseDirectFlag(requireValue(args, index, argument)))
       index += 1
     } else if (argument.startsWith("--flag=")) {
       result.directFlags.push(parseDirectFlag(argument.slice("--flag=".length)))
+    } else if (argument.startsWith("-f=")) {
+      result.directFlags.push(parseDirectFlag(argument.slice("-f=".length)))
     } else if (argument === "-w" || argument === "--write") result.write = true
+    else if (argument === "--dry-run") dryRun = true
     else if (argument === "--check") result.check = true
     else if (argument === "--diff") {
       result.diff = true
@@ -207,7 +241,24 @@ function parseArguments(args: string[]): CliArguments {
     }
     else if (argument === "--json") result.json = true
     else if (argument === "--remove-side-effect-imports") result.removeSideEffectImports = true
-    else if (argument === "--ignore") {
+    else if (argument === "--no-remove-unused-imports") result.overrides.removeUnusedImports = false
+    else if (argument === "--skip-effectful-conditions") result.overrides.simplifyEffectfulConditions = false
+    else if (argument === "--no-parse-check") result.overrides.verify = { ...result.overrides.verify, parse: false }
+    else if (argument === "--keep-comments") result.overrides.commentPolicy = "preserve"
+    else if (argument === "--comment-policy" || argument.startsWith("--comment-policy=")) {
+      const value = argument.includes("=") ? argument.slice(argument.indexOf("=") + 1) : requireValue(args, index, argument)
+      if (value !== "report" && value !== "preserve" && value !== "discard") {
+        throw new Error("--comment-policy must be report, preserve, or discard")
+      }
+      result.overrides.commentPolicy = value
+      if (!argument.includes("=")) index += 1
+    } else if (argument === "--max-passes" || argument.startsWith("--max-passes=")) {
+      const value = argument.includes("=") ? argument.slice(argument.indexOf("=") + 1) : requireValue(args, index, argument)
+      const passes = Number(value)
+      if (!Number.isInteger(passes) || passes <= 0) throw new Error("--max-passes must be a positive integer")
+      result.overrides.maxPasses = passes
+      if (!argument.includes("=")) index += 1
+    } else if (argument === "--ignore") {
       result.ignore.push(requireValue(args, index, argument))
       index += 1
     } else if (argument.startsWith("--ignore=")) {
@@ -220,6 +271,7 @@ function parseArguments(args: string[]): CliArguments {
     else if (argument.startsWith("-")) throw new Error(`unknown option: ${argument}`)
     else result.targets.push(argument)
   }
+  if (dryRun && result.write) throw new Error("cannot combine --write and --dry-run")
   if (result.json) result.diff = false
   else if (result.write && !result.diffExplicit) result.diff = false
   return result
@@ -343,6 +395,10 @@ async function loadConfig(parsed: CliArguments, cwd: string): Promise<FlagCleanC
 
   const config = validateConfig({
     ...configured,
+    ...parsed.overrides,
+    ...(parsed.overrides.verify || configured.verify
+      ? { verify: { ...configured.verify, ...parsed.overrides.verify } }
+      : {}),
     ...(parsed.removeSideEffectImports ? { removeSideEffectImports: true } : {}),
     flags: [...parsed.directFlags, ...configured.flags],
   })

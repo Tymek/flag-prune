@@ -337,7 +337,7 @@ const three = (flagA && !flagA) || flagB`
   })
 
   it("skips effectful constant rewrites when preservation is disabled", () => {
-    const result = run("if (check() || true) run(); else stop();", [], { preserveEffects: false })
+    const result = run("if (check() || true) run(); else stop();", [], { simplifyEffectfulConditions: false })
     expect(result.code).toContain("check() || true")
     expect(result.report.warnings).toHaveLength(1)
   })

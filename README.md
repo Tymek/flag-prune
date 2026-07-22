@@ -71,7 +71,7 @@ Repeat `--flag` for related flags. For reusable migrations or verification setti
       "value": false
     }
   ],
-  "preserveEffects": true,
+  "simplifyEffectfulConditions": true,
   "removeUnusedImports": true,
   "commentPolicy": "report",
   "verify": {
@@ -131,4 +131,4 @@ Module-backed definitions match the exact import binding, including aliases, and
 - Removing the final configured import binding leaves `import "module"` to preserve module initialization. Set `removeSideEffectImports` only for a proven side-effect-free module.
 - Output is reparsed and every fixture is expected to be idempotent.
 
-Set `preserveEffects` to `false` to skip transformations whose constant condition still requires runtime evaluation. The tool never discards those effects.
+Set `simplifyEffectfulConditions` to `false` (CLI: `--skip-effectful-conditions`) to leave constant conditions whose test still requires runtime evaluation. The tool never discards those effects.

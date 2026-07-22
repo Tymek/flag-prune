@@ -38,7 +38,8 @@ export interface VerificationConfig {
 
 export interface FlagCleanConfig {
   flags: FlagDefinition[]
-  preserveEffects?: boolean
+  /** Simplify constant conditions whose evaluation still carries side effects. */
+  simplifyEffectfulConditions?: boolean
   removeUnusedImports?: boolean
   /** Remove an import declaration after its last configured binding is removed. */
   removeSideEffectImports?: boolean

@@ -13,7 +13,7 @@ import type { CommentPolicy, TransformReport } from "./types.js"
 
 export interface SimplifyOptions {
   commentPolicy: CommentPolicy
-  preserveEffects: boolean
+  simplifyEffectfulConditions: boolean
   solverVariableLimit: number
 }
 
@@ -37,7 +37,7 @@ function replaceExpression(path: NodePath<t.Expression>, replacement: t.Expressi
 
 function conditionEffects(path: NodePath<t.Expression>, state: PassState): t.Expression[] | undefined {
   if (isRemovablePure(path)) return []
-  if (!state.options.preserveEffects) {
+  if (!state.options.simplifyEffectfulConditions) {
     const location = path.node.loc?.start
     const suffix = location === undefined ? "" : ` at ${location.line}:${location.column + 1}`
     const warning = `Skipped constant condition with required evaluation${suffix}`
@@ -56,7 +56,7 @@ function evaluationThen(
   knownConstant: boolean,
 ): t.Expression | undefined {
   if (isRemovablePure(path)) return result
-  if (!state.options.preserveEffects) return undefined
+  if (!state.options.simplifyEffectfulConditions) return undefined
   const effects = knownConstant ? requiredEffects(path.node) : [path.node]
   if (effects.length > 0) state.report.effectsPreserved += 1
   return sequenceWithResult(effects, result)

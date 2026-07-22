@@ -241,4 +241,46 @@ describe("flag-prune process", () => {
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
     expect(await readFile(join(cwd, "vendor", "input.ts"), "utf8")).toBe("if (FLAG) yes(); else no();\n")
   })
+
+  it("accepts inline -f= and -c= forms", async () => {
+    const cwd = await fixture()
+    await writeFile(join(cwd, "input.ts"), "if (hasFeature.newUi) yes(); else no();\n")
+    const result = await invoke(["-f=hasFeature.newUi=true", "--write", "input.ts"], cwd)
+    expect(result.code).toBe(0)
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
+  })
+
+  it("rejects combining --write and --dry-run", async () => {
+    const result = await invoke(["--flag", "FLAG", "--write", "--dry-run", "input.ts"])
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain("cannot combine --write and --dry-run")
+  })
+
+  it("exposes comment policy through the CLI", async () => {
+    const cwd = await fixture()
+    await writeFile(join(cwd, "input.ts"), "if (FLAG) {\n  // keep me\n  yes();\n} else no();\n")
+    const result = await invoke(["--config", "flags.json", "--keep-comments", "--write", "input.ts"], cwd)
+    expect(result.code).toBe(0)
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toContain("// keep me")
+  })
+
+  it("validates --comment-policy and --max-passes values", async () => {
+    const policy = await invoke(["--flag", "FLAG", "--comment-policy", "bogus", "input.ts"])
+    expect(policy.code).toBe(2)
+    expect(policy.stderr).toContain("--comment-policy must be report, preserve, or discard")
+    const passes = await invoke(["--flag", "FLAG", "--max-passes", "0", "input.ts"])
+    expect(passes.code).toBe(2)
+    expect(passes.stderr).toContain("--max-passes must be a positive integer")
+  })
+
+  it("keeps unused imports with --no-remove-unused-imports", async () => {
+    const cwd = await fixture()
+    await writeFile(join(cwd, "input.ts"), 'import { FLAG } from "./flags";\nif (FLAG) yes(); else no();\n')
+    const result = await invoke(
+      ["--flag", "./flags#FLAG=true", "--no-remove-unused-imports", "--write", "input.ts"],
+      cwd,
+    )
+    expect(result.code).toBe(0)
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toContain('import { FLAG } from "./flags"')
+  })
 })
