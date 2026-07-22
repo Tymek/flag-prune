@@ -298,15 +298,12 @@ function run(hasFeature: FeatureSet) {
     expect(result.report.flagsReplaced).toBe(1)
   })
 
-  it("requires explicit optional semantics", () => {
-    const source = "if (hasFeature?.flag) yes();"
-    const unmatched = run(source, [{ identifier: "hasFeature", path: ["flag"], value: true }])
-    const matched = run(source, [
-      { identifier: "hasFeature", path: ["flag"], optional: true, value: true },
-    ])
-    expect(unmatched.report.flagsReplaced).toBe(0)
-    expect(unmatched.code).toContain("hasFeature?.flag")
-    expect(matched.code).toBe("yes();\n")
+  it("matches optional and plain member access with one rule", () => {
+    const flags = [{ identifier: "hasFeature", path: ["flag"], value: true }]
+    expect(run("if (hasFeature?.flag) yes();", flags).code).toBe("yes();\n")
+    expect(run("if (hasFeature.flag) yes();", flags).code).toBe("yes();\n")
+    const call = [{ call: "client.isEnabled", arguments: ["new-ui"], value: true }]
+    expect(run('client?.isEnabled("new-ui", ctx) ? a() : b()', call).code).toContain("a()")
   })
 })
 

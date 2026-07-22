@@ -55,12 +55,12 @@ Quick start:
   npx flag-prune --flag 'useFlag("new-access")=false' --write src
 
 Flag rule syntax (repeat --flag for multiple rules):
-  NAME.path[=true|false]          local/global identifier or member access
-  module#EXPORT.path[=true|false] imported binding (aliases resolved)
-  'CALL("key", 1)[=true|false]'   approved call; args are an exact prefix
-  a?.b or CALL?.("k")             optional access; only matches optional form
-  Value defaults to true when '=true|=false' is omitted.
-  Use '=' inline (e.g. --flag=NAME=false) to pass values that start with '-'.
+  NAME.path[=value]               local/global identifier or member access
+  module#EXPORT.path[=value]      imported binding (aliases resolved)
+  'CALL("key", 1)[=value]'        approved call; args are an exact prefix
+  a?.b or CALL?.("k")             optional access matches the plain form too
+  Value defaults to true; accepts booleans, numbers, null, and strings
+  (e.g. =treatment, =3, =null, or a quoted "value with spaces").
   Use '--' to end options before file targets.
 
 Options:
@@ -203,7 +203,6 @@ function parseDirectFlag(rule: string): FlagDefinition {
   if (moduleName === "") throw new Error(`invalid --flag selector: ${rawSelector}`)
   const directCall = parseDirectCall(rawAccess, moduleName, flagValue, rule)
   if (directCall !== undefined) return directCall
-  const optional = rawAccess.includes("?.")
   const access = rawAccess.replaceAll("?.", ".")
   const parts = access.split(".")
   if (
@@ -216,7 +215,6 @@ function parseDirectFlag(rule: string): FlagDefinition {
   const [root, ...path] = parts as [string, ...string[]]
   const shared = {
     ...(path.length === 0 ? {} : { path }),
-    ...(optional ? { optional: true } : {}),
     value: flagValue,
   }
   return moduleName === undefined

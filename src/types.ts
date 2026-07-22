@@ -23,8 +23,6 @@ export interface FlagDefinition {
   /** Approved static function name. Arguments are an exact required prefix. */
   call?: string
   arguments?: FlagArgument[]
-  /** Required for matching optional member access or optional calls. */
-  optional?: boolean
   /** Replacement value. Defaults to true. */
   value?: FlagValue
 }

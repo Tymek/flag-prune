@@ -6,7 +6,6 @@ interface BaseMatcher {
   flag: FlagDefinition
   root: string
   binding: Binding | undefined
-  optional: boolean
   importSpecifier?: t.ImportSpecifier | t.ImportDefaultSpecifier | t.ImportNamespaceSpecifier
 }
 
@@ -100,7 +99,6 @@ export function buildMatchers(programPath: NodePath<t.Program>, flags: FlagDefin
         flag,
         root: target.root,
         binding: programPath.scope.getBinding(target.root),
-        optional: flag.optional === true,
         ...(target.specifier === undefined ? {} : { importSpecifier: target.specifier }),
       }
       if (target.specifier !== undefined) importCandidates.add(target.specifier)
@@ -128,7 +126,6 @@ export function buildMatchers(programPath: NodePath<t.Program>, flags: FlagDefin
 interface StaticAccess {
   root: string
   properties: string[]
-  optional: boolean
 }
 
 function staticProperty(node: t.MemberExpression | t.OptionalMemberExpression): string | undefined {
@@ -138,8 +135,8 @@ function staticProperty(node: t.MemberExpression | t.OptionalMemberExpression): 
 }
 
 function staticAccess(node: t.Expression | t.V8IntrinsicIdentifier): StaticAccess | undefined {
-  if (t.isIdentifier(node)) return { root: node.name, properties: [], optional: false }
-  if (t.isThisExpression(node)) return { root: "this", properties: [], optional: false }
+  if (t.isIdentifier(node)) return { root: node.name, properties: [] }
+  if (t.isThisExpression(node)) return { root: "this", properties: [] }
   if (!t.isMemberExpression(node) && !t.isOptionalMemberExpression(node)) return undefined
   const property = staticProperty(node)
   if (property === undefined || t.isSuper(node.object)) return undefined
@@ -148,7 +145,6 @@ function staticAccess(node: t.Expression | t.V8IntrinsicIdentifier): StaticAcces
   return {
     root: parent.root,
     properties: [...parent.properties, property],
-    optional: parent.optional || (t.isOptionalMemberExpression(node) && node.optional === true),
   }
 }
 
@@ -189,7 +185,6 @@ export function matchValue(path: NodePath<t.Expression>, matcher: ValueMatcher):
   if (!path.isMemberExpression() && !path.isOptionalMemberExpression()) return false
   const access = staticAccess(path.node)
   if (access === undefined || !bindingMatches(path, access, matcher)) return false
-  if (access.optional !== matcher.optional) return false
   return sameProperties(access.properties, matcher.properties)
 }
 
@@ -201,9 +196,7 @@ export function matchCall(
   if (t.isV8IntrinsicIdentifier(callee) || t.isSuper(callee) || t.isImport(callee)) return false
   const access = staticAccess(callee)
   if (access === undefined || !bindingMatches(path, access, matcher)) return false
-  const optional = access.optional || (t.isOptionalCallExpression(path.node) && path.node.optional === true)
-  if (optional !== matcher.optional || !sameProperties(access.properties, matcher.properties)) return false
+  if (!sameProperties(access.properties, matcher.properties)) return false
   if (path.node.arguments.length < matcher.arguments.length) return false
-  if (optional && path.node.arguments.length > matcher.arguments.length) return false
   return matcher.arguments.every((expected, index) => argumentMatches(path.node.arguments[index]!, expected))
 }

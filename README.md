@@ -117,7 +117,7 @@ console.log(result.code)
 console.log(result.report)
 ```
 
-Module-backed definitions match the exact import binding, including aliases, and never match shadowing declarations. Global/identifier definitions bind to the program-level declaration when one exists; otherwise they match only unresolved references. Static calls support dotted callees and exact primitive argument prefixes. Replacement values default to `true`. Optional access is matched only with `"optional": true`.
+Module-backed definitions match the exact import binding, including aliases, and never match shadowing declarations. Global/identifier definitions bind to the program-level declaration when one exists; otherwise they match only unresolved references. Static calls support dotted callees and exact primitive argument prefixes. Replacement values default to `true` and may also be a string, number, or `null`. Optional access (`a?.b`, `call?.("k")`) is matched by the same rule as the plain form.
 
 ## Safety rules
 

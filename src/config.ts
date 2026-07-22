@@ -11,7 +11,6 @@ const ALLOWED_FLAG_KEYS = new Set([
   "path",
   "call",
   "arguments",
-  "optional",
   "value",
 ])
 const ALLOWED_CONFIG_KEYS = new Set([
@@ -50,7 +49,6 @@ function validateFlag(flag: unknown, index: number): FlagDefinition {
   if (typeof value.call === "string" && !/^[$A-Z_a-z][$\w]*(?:\.[$A-Z_a-z][$\w]*)*$/.test(value.call)) {
     fail(`flags[${index}].call must be a static dotted function name`)
   }
-  if (value.optional !== undefined && typeof value.optional !== "boolean") fail(`flags[${index}].optional must be boolean`)
   if (value.path !== undefined && (!Array.isArray(value.path) || value.path.some((part) => typeof part !== "string"))) {
     fail(`flags[${index}].path must be a string array`)
   }
