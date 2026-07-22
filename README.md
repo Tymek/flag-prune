@@ -26,6 +26,8 @@ Imported flags use `module#export.path=value`:
 flag-clean --flag ./features#hasFeature.newAccessControl=true --write src
 ```
 
+This leaves a bare `import "./features"` to preserve module initialization. Add `--remove-side-effect-imports` only when that module is proven side-effect-free.
+
 Repeat `--flag` for related flags. For approved calls, verification settings, or reusable migrations, create `flag-clean.config.json`:
 
 ```json

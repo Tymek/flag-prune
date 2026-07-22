@@ -96,6 +96,17 @@ describe("flag-clean process", () => {
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe('import "./flags";\nno();\n')
   })
 
+  it("can remove a proven side-effect-free flag import", async () => {
+    const cwd = await fixture()
+    await writeFile(join(cwd, "input.ts"), 'import { FLAG } from "./flags"; if (FLAG) yes(); else no();\n')
+    const result = await invoke(
+      ["--flag", "./flags#FLAG=true", "--remove-side-effect-imports", "--write", "input.ts"],
+      cwd,
+    )
+    expect(result.code).toBe(0)
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
+  })
+
   it("supports equals syntax and repeated direct flags", async () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "input.ts"), "if (A && B) yes(); else no();\n")

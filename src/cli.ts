@@ -19,6 +19,7 @@ interface CliArguments {
   check: boolean
   diff: boolean
   diffExplicit: boolean
+  removeSideEffectImports: boolean
   json: boolean
   help: boolean
   version: boolean
@@ -56,6 +57,8 @@ Options:
       --diff           Print unified diffs (default in dry-run mode)
       --no-diff        Hide unified diffs
       --json           Print machine-readable report
+      --remove-side-effect-imports
+                        Delete empty flag imports known to be side-effect-free
       --typecheck      Run configured/default typecheck after writing
       --lint           Run configured/default lint after writing
       --test           Run configured/default tests after writing
@@ -110,6 +113,7 @@ function parseArguments(args: string[]): CliArguments {
     check: false,
     diff: true,
     diffExplicit: false,
+    removeSideEffectImports: false,
     json: false,
     help: false,
     version: false,
@@ -140,6 +144,7 @@ function parseArguments(args: string[]): CliArguments {
       result.diffExplicit = true
     }
     else if (argument === "--json") result.json = true
+    else if (argument === "--remove-side-effect-imports") result.removeSideEffectImports = true
     else if (argument === "--typecheck") result.verification.typecheck = true
     else if (argument === "--lint") result.verification.lint = true
     else if (argument === "--test") result.verification.tests = true
@@ -249,6 +254,7 @@ async function loadConfig(parsed: CliArguments, cwd: string): Promise<FlagCleanC
 
   const config = validateConfig({
     ...configured,
+    ...(parsed.removeSideEffectImports ? { removeSideEffectImports: true } : {}),
     flags: [...parsed.directFlags, ...configured.flags],
   })
   if (config.flags.length === 0) {
