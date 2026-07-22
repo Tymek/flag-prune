@@ -7,7 +7,7 @@ import process from "node:process"
 import { promisify } from "node:util"
 
 const run = promisify(execFile)
-const temporary = await mkdtemp(join(tmpdir(), "flagrm-pack-check-"))
+const temporary = await mkdtemp(join(tmpdir(), "flag-prune-pack-check-"))
 
 try {
   await run("pnpm", ["pack", "--pack-destination", temporary], { cwd: resolve(".") })

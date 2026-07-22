@@ -41,13 +41,13 @@ export interface CliIo {
   stderr: { write(value: string): unknown }
 }
 
-const HELP = `Usage: flag-clean [options] <file-or-directory...>
+const HELP = `Usage: flag-prune [options] <file-or-directory...>
 
 Safely replace configured feature flags and remove dead code.
 
 Quick start:
-  flag-clean --flag hasFeature.newAccess=true src
-  flag-clean --flag ./flags#NEW_ACCESS=false --write src
+  flag-prune --flag hasFeature.newAccess=true src
+  flag-prune --flag ./flags#NEW_ACCESS=false --write src
 
 Options:
   -f, --flag <rule>    Flag rule; repeatable (NAME.path=true or module#EXPORT=false)
@@ -185,7 +185,7 @@ async function collectFiles(cwd: string, targets: string[]): Promise<string[]> {
 
 async function atomicWrite(path: string, contents: string): Promise<void> {
   const info = await stat(path)
-  const temporary = join(dirname(path), `.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.flag-clean`)
+  const temporary = join(dirname(path), `.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.flag-prune`)
   try {
     await writeFile(temporary, contents, { mode: info.mode })
     await chmod(temporary, info.mode)
@@ -246,7 +246,7 @@ async function loadConfig(parsed: CliArguments, cwd: string): Promise<FlagCleanC
     const path = resolve(cwd, parsed.configPath)
     configured = validateConfig(JSON.parse(await readFile(path, "utf8")))
   } else if (parsed.directFlags.length === 0) {
-    const defaultPath = resolve(cwd, "flag-clean.config.json")
+    const defaultPath = resolve(cwd, "flag-prune.config.json")
     if (await pathExists(defaultPath)) {
       configured = validateConfig(JSON.parse(await readFile(defaultPath, "utf8")))
     }
@@ -386,7 +386,7 @@ export async function runCli(
     await runVerification(io.cwd, config.verify, parsed.verification)
     return parsed.check && report.filesChanged > 0 ? 1 : 0
   } catch (error) {
-    io.stderr.write(`flag-clean: ${error instanceof Error ? error.message : String(error)}\n`)
+    io.stderr.write(`flag-prune: ${error instanceof Error ? error.message : String(error)}\n`)
     return 2
   }
 }

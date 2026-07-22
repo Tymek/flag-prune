@@ -1,5 +1,5 @@
 {
-  "name": "flagrm",
+  "name": "flag-prune",
   "version": "1.0.0",
   "description": "Safe, deterministic feature-flag removal codemod for JavaScript and TypeScript",
   "type": "module",
@@ -16,7 +16,7 @@
     }
   },
   "bin": {
-    "flag-clean": "./dist/cli.js"
+    "flag-prune": "./dist/cli.js"
   },
   "scripts": {
     "build": "node scripts/build.mjs",

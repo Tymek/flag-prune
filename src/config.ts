@@ -1,7 +1,7 @@
 import type { FlagCleanConfig, FlagDefinition } from "./types.js"
 
 function fail(message: string): never {
-  throw new TypeError(`Invalid flag-clean config: ${message}`)
+  throw new TypeError(`Invalid flag-prune config: ${message}`)
 }
 
 function validateFlag(flag: unknown, index: number): FlagDefinition {

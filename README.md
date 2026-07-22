@@ -1,34 +1,34 @@
-# flagrM
+# flag-prune
 
-`flagrm` is a conservative JS/TS/JSX/TSX codemod for removing feature flags. Its `flag-clean` CLI replaces configured flag reads with known booleans, folds expressions to a fixed point, removes dead control flow, preserves required evaluation and side effects, cleans configured imports, reparses output, and reports every transformation.
+`flag-prune` is a conservative JS/TS/JSX/TSX codemod for removing feature flags. Its `flag-prune` CLI replaces configured flag reads with known booleans, folds expressions to a fixed point, removes dead control flow, preserves required evaluation and side effects, cleans configured imports, reparses output, and reports every transformation.
 
 ## Install and use
 
 ```sh
-pnpm add -D flagrm
+pnpm add -D flag-prune
 ```
 
 Preview one flag without creating a config file:
 
 ```sh
-flag-clean --flag hasFeature.newAccessControl=true src
+flag-prune --flag hasFeature.newAccessControl=true src
 ```
 
 Apply it after reviewing the diff:
 
 ```sh
-flag-clean --flag hasFeature.newAccessControl=true --write src
+flag-prune --flag hasFeature.newAccessControl=true --write src
 ```
 
 Imported flags use `module#export.path=value`:
 
 ```sh
-flag-clean --flag ./features#hasFeature.newAccessControl=true --write src
+flag-prune --flag ./features#hasFeature.newAccessControl=true --write src
 ```
 
 This leaves a bare `import "./features"` to preserve module initialization. Add `--remove-side-effect-imports` only when that module is proven side-effect-free.
 
-Repeat `--flag` for related flags. For approved calls, verification settings, or reusable migrations, create `flag-clean.config.json`:
+Repeat `--flag` for related flags. For approved calls, verification settings, or reusable migrations, create `flag-prune.config.json`:
 
 ```json
 {
@@ -61,13 +61,13 @@ Repeat `--flag` for related flags. For approved calls, verification settings, or
 With the default config filename, the CLI finds it automatically:
 
 ```sh
-flag-clean src
+flag-prune src
 ```
 
 Write atomically and run project checks:
 
 ```sh
-flag-clean --write --typecheck --lint --test src
+flag-prune --write --typecheck --lint --test src
 ```
 
 Use `--check` in CI to fail when changes remain and `--json` for machine-readable reports.
@@ -75,7 +75,7 @@ Use `--check` in CI to fail when changes remain and `--json` for machine-readabl
 ## Library API
 
 ```ts
-import { transform } from "flagrm"
+import { transform } from "flag-prune"
 
 const result = transform(source, {
   filename: "access.ts",

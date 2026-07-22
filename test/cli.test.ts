@@ -23,7 +23,7 @@ function invoke(args: string[], cwd = resolve(".")): Promise<{ code: number | nu
 }
 
 async function fixture(): Promise<string> {
-  const cwd = await mkdtemp(join(tmpdir(), "flag-clean-cli-"))
+  const cwd = await mkdtemp(join(tmpdir(), "flag-prune-cli-"))
   temporaryDirectories.push(cwd)
   await writeFile(
     join(cwd, "flags.json"),
@@ -33,12 +33,12 @@ async function fixture(): Promise<string> {
   return cwd
 }
 
-describe("flag-clean process", () => {
+describe("flag-prune process", () => {
   it("prints help and version", async () => {
     const help = await invoke(["--help"])
     const version = await invoke(["--version"])
     expect(help).toMatchObject({ code: 0, stderr: "" })
-    expect(help.stdout).toContain("Usage: flag-clean")
+    expect(help.stdout).toContain("Usage: flag-prune")
     expect(version).toMatchObject({ code: 0, stdout: "1.0.0\n", stderr: "" })
   })
 
@@ -116,16 +116,16 @@ describe("flag-clean process", () => {
     expect(result.stdout).toContain("2 flags replaced")
   })
 
-  it("auto-loads flag-clean.config.json when direct flags are absent", async () => {
+  it("auto-loads flag-prune.config.json when direct flags are absent", async () => {
     const cwd = await fixture()
-    await writeFile(join(cwd, "flag-clean.config.json"), await readFile(join(cwd, "flags.json")))
+    await writeFile(join(cwd, "flag-prune.config.json"), await readFile(join(cwd, "flags.json")))
     const result = await invoke(["--write", "input.ts"], cwd)
     expect(result.code).toBe(0)
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
   })
 
   it("explains how to configure a missing flag", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "flag-clean-cli-"))
+    const cwd = await mkdtemp(join(tmpdir(), "flag-prune-cli-"))
     temporaryDirectories.push(cwd)
     await writeFile(join(cwd, "input.ts"), "work()\n")
     const result = await invoke(["input.ts"], cwd)
