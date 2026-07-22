@@ -88,6 +88,49 @@ describe("flag-prune process", () => {
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
   })
 
+  it("accepts an exact call rule and removes an assigned flag binding", async () => {
+    const cwd = await fixture()
+    await writeFile(
+      join(cwd, "input.ts"),
+      'const x = useFlag("new-ui")\nif (x) yes(); else no();\n',
+    )
+    const result = await invoke(["--flag", 'useFlag("new-ui")=false', "--write", "input.ts"], cwd)
+    expect(result).toMatchObject({ code: 0, stderr: "" })
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("no();\n")
+  })
+
+  it("accepts dotted call rules with static primitive arguments", async () => {
+    const cwd = await fixture()
+    await writeFile(join(cwd, "input.ts"), 'if (flags.enabled("new-ui", -1, null)) yes(); else no();\n')
+    const result = await invoke([
+      "--flag",
+      'flags.enabled("new-ui", -1, null)=true',
+      "--write",
+      "input.ts",
+    ], cwd)
+    expect(result.code).toBe(0)
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
+  })
+
+  it("keeps punctuation inside exact string keys", async () => {
+    const cwd = await fixture()
+    await writeFile(join(cwd, "input.ts"), 'if (useFlag("release#1?.ready")) yes(); else no();\n')
+    const result = await invoke([
+      "--flag",
+      'useFlag("release#1?.ready")=false',
+      "--write",
+      "input.ts",
+    ], cwd)
+    expect(result.code).toBe(0)
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("no();\n")
+  })
+
+  it("rejects dynamic call arguments", async () => {
+    const result = await invoke(["--flag", "useFlag(key)=true", "input.ts"])
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain("arguments must be static JSON primitives")
+  })
+
   it("supports an import-backed direct flag selector", async () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "input.ts"), 'import { FLAG } from "./flags"; if (FLAG) yes(); else no();\n')

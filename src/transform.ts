@@ -46,6 +46,7 @@ function programPathFor(ast: t.File): NodePath<t.Program> {
 interface ReplacementState {
   matchers: FlagMatcher[]
   matchedBindings: Set<Binding>
+  booleanBindings: Map<Binding, boolean>
   report: TransformReport
 }
 
@@ -65,6 +66,11 @@ function callReplacement(
   state: ReplacementState,
 ): boolean {
   if (matcher.kind !== "call" || !matchCall(path, matcher)) return false
+  const parent = path.parentPath
+  if (parent.isVariableDeclarator() && parent.node.init === path.node && t.isIdentifier(parent.node.id)) {
+    const binding = parent.scope.getBinding(parent.node.id.name)
+    if (binding?.constant === true) state.booleanBindings.set(binding, matcher.flag.value)
+  }
   const replacement = t.booleanLiteral(matcher.flag.value)
   t.inheritsComments(replacement, path.node)
   path.replaceWith(replacement)
@@ -73,8 +79,28 @@ function callReplacement(
   return true
 }
 
+function inlineBooleanBindings(state: ReplacementState): void {
+  for (const [binding, value] of state.booleanBindings) {
+    for (const reference of binding.referencePaths) {
+      if (
+        reference.removed ||
+        !reference.isReferencedIdentifier() ||
+        reference.parentPath.isExportSpecifier() ||
+        reference.parentPath.isTSTypeQuery()
+      ) {
+        continue
+      }
+      const replacement = t.booleanLiteral(value)
+      t.inheritsComments(replacement, reference.node)
+      reference.replaceWith(replacement)
+      state.report.expressionsFolded += 1
+    }
+    state.matchedBindings.add(binding)
+  }
+}
+
 function replaceFlags(ast: t.File, matchers: FlagMatcher[], report: TransformReport): Set<Binding> {
-  const state: ReplacementState = { matchers, matchedBindings: new Set(), report }
+  const state: ReplacementState = { matchers, matchedBindings: new Set(), booleanBindings: new Map(), report }
   traverse(ast, {
     CallExpression: {
       exit(path) {
@@ -112,6 +138,7 @@ function replaceFlags(ast: t.File, matchers: FlagMatcher[], report: TransformRep
       },
     },
   })
+  inlineBooleanBindings(state)
   return state.matchedBindings
 }
 
@@ -173,14 +200,17 @@ function cleanupBindings(
       const binding = path.scope.getBinding(path.node.id.name)
       if (binding?.referenced === true || binding?.constant !== true) return
       const declaration = path.parentPath
-      if (!declaration.isVariableDeclaration() || declaration.node.declarations.length !== 1) return
+      if (!declaration.isVariableDeclaration()) return
       const initializer = path.get("init")
       if (initializer.node !== null && initializer.isExpression() && !isRemovablePure(initializer)) {
+        if (declaration.node.declarations.length !== 1) return
         if (!declaration.parentPath.isProgram() && !declaration.parentPath.isBlockStatement()) return
         declaration.replaceWith(t.expressionStatement(initializer.node))
         report.effectsPreserved += 1
-      } else {
+      } else if (declaration.node.declarations.length === 1) {
         declaration.remove()
+      } else {
+        path.remove()
       }
       report.bindingsRemoved += 1
     },

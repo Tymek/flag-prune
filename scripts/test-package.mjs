@@ -37,6 +37,13 @@ try {
   const cliResult = await run(cli, ["--config", "flags.json", "--write", "input.js"], { cwd: consumer })
   assert.match(cliResult.stdout, /1 flag replaced/)
   assert.equal(await readFile(join(consumer, "input.js"), "utf8"), "no();\n")
+
+  await writeFile(
+    join(consumer, "call.js"),
+    'const enabled = useFlag("new-ui")\nif (enabled) yes(); else no();\n',
+  )
+  await run(cli, ["--flag", 'useFlag("new-ui")=true', "--write", "call.js"], { cwd: consumer })
+  assert.equal(await readFile(join(consumer, "call.js"), "utf8"), "yes();\n")
 } finally {
   await rm(temporary, { recursive: true, force: true })
 }

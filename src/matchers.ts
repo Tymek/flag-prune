@@ -55,10 +55,29 @@ function importedTargets(program: t.Program, moduleName: string, exportedName: s
   return targets
 }
 
+function staticParts(selector: string): [string, ...string[]] {
+  return selector.split(".") as [string, ...string[]]
+}
+
+function localTarget(program: t.Program, root: string, properties: string[]): RootTarget {
+  for (const statement of program.body) {
+    if (!t.isImportDeclaration(statement)) continue
+    const specifier = statement.specifiers.find((candidate) => candidate.local.name === root)
+    if (specifier !== undefined) return { root, properties, specifier }
+  }
+  return { root, properties }
+}
+
 function targetsForFlag(programPath: NodePath<t.Program>, flag: FlagDefinition): RootTarget[] {
   if (flag.call !== undefined) {
-    if (flag.module !== undefined) return importedTargets(programPath.node, flag.module, flag.call)
-    return [{ root: flag.call, properties: [] }]
+    const [root, ...properties] = staticParts(flag.call)
+    if (flag.module !== undefined) {
+      return importedTargets(programPath.node, flag.module, root).map((target) => ({
+        ...target,
+        properties: [...target.properties, ...properties],
+      }))
+    }
+    return [localTarget(programPath.node, root, properties)]
   }
 
   if (flag.module !== undefined && flag.export !== undefined) {
@@ -146,7 +165,14 @@ function argumentMatches(
 ): boolean {
   if (expected === null) return t.isNullLiteral(node)
   if (typeof expected === "string") return t.isStringLiteral(node, { value: expected })
-  if (typeof expected === "number") return t.isNumericLiteral(node, { value: expected })
+  if (typeof expected === "number") {
+    if (t.isNumericLiteral(node, { value: expected })) return true
+    return (
+      expected < 0 &&
+      t.isUnaryExpression(node, { operator: "-" }) &&
+      t.isNumericLiteral(node.argument, { value: -expected })
+    )
+  }
   return t.isBooleanLiteral(node, { value: expected })
 }
 

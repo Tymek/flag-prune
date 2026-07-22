@@ -70,6 +70,90 @@ if (featureEnabled(dynamicName)) dynamic()
     expect(result.report.flagsReplaced).toBe(1)
   })
 
+  it("inlines a fixed call result and removes its dead branch and binding", () => {
+    const source = `const x = useFlag("y")
+if (x) {
+  newPath()
+} else {
+  oldPath()
+}`
+    const result = run(source, [{ call: "useFlag", arguments: ["y"], value: true }])
+    expect(result.code).toBe("newPath();\n")
+    expect(result.report).toMatchObject({ flagsReplaced: 1, deadBranchesRemoved: 1, bindingsRemoved: 1 })
+  })
+
+  it("cleans an unaliased imported call while preserving module evaluation", () => {
+    const source = `import { useFlag } from "flag-client"
+const x = useFlag("y")
+if (x) yes(); else no()`
+    const result = run(source, [{ call: "useFlag", arguments: ["y"], value: true }])
+    expect(result.code).toBe('import "flag-client";\nyes();\n')
+  })
+
+  it("preserves exported bindings while propagating their local reads", () => {
+    const source = `const x = useFlag("y")
+export { x }
+if (x) yes(); else no()`
+    const result = run(source, [{ call: "useFlag", arguments: ["y"], value: false }])
+    expect(result.code).toContain("const x = false;")
+    expect(result.code).toContain("export { x };")
+    expect(result.code).toContain("no();")
+  })
+
+  it("matches exact dotted calls without provider-specific behavior", () => {
+    const source = `if (client.isEnabled("new-ui")) yes(); else no()
+if (client.isEnabled("other")) other()`
+    const result = run(source, [
+      { call: "client.isEnabled", arguments: ["new-ui"], value: false },
+    ])
+    expect(result.code).toContain("no();")
+    expect(result.code).toContain('client.isEnabled("other")')
+    expect(result.report.flagsReplaced).toBe(1)
+  })
+
+  it("resolves imported call aliases and preserves shadowed functions", () => {
+    const source = `import { useFlag as readFlag } from "./flags"
+const enabled = readFlag("new-ui")
+function local(readFlag: (key: string) => boolean) {
+  return readFlag("new-ui")
+}
+if (enabled) yes(); else no()`
+    const result = run(source, [
+      { module: "./flags", call: "useFlag", arguments: ["new-ui"], value: false },
+    ])
+    expect(result.code).toContain('import "./flags";')
+    expect(result.code).toContain('return readFlag("new-ui");')
+    expect(result.code).toContain("no();")
+    expect(result.report.flagsReplaced).toBe(1)
+  })
+
+  it("matches a method on an imported default client", () => {
+    const source = `import client from "flag-client"
+const enabled = client.isEnabled("new-ui")
+if (enabled) yes(); else no()`
+    const result = run(source, [
+      { module: "flag-client", call: "default.isEnabled", arguments: ["new-ui"], value: true },
+    ])
+    expect(result.code).toBe('import "flag-client";\nyes();\n')
+  })
+
+  it("does not inline a reassigned call result", () => {
+    const source = `let enabled = useFlag("new-ui")
+enabled = override()
+if (enabled) yes(); else no()`
+    const result = run(source, [{ call: "useFlag", arguments: ["new-ui"], value: true }])
+    expect(result.code).toContain("let enabled = true;")
+    expect(result.code).toContain("enabled = override();")
+    expect(result.code).toContain("if (enabled)")
+  })
+
+  it("removes only the inlined binding from a multi-declarator statement", () => {
+    const result = run("const x = useFlag('y'), keep = load(); if (x) yes();", [
+      { call: "useFlag", arguments: ["y"], value: false },
+    ])
+    expect(result.code).toBe("const keep = load();\n")
+  })
+
   it("returns untouched dynamic source byte-for-byte", () => {
     const source = "if(featureEnabled(flagName)){ newAccess() }else{ legacyAccess() }\n"
     const result = run(source, [
@@ -281,5 +365,6 @@ describe("configuration", () => {
     expect(() =>
       validateConfig({ flags: [{ identifier: "FLAG", call: "enabled", value: true }] }),
     ).toThrow(/cannot combine/)
+    expect(() => validateConfig({ flags: [{ call: "client[method]", value: true }] })).toThrow(/static dotted/)
   })
 })

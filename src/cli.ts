@@ -3,6 +3,8 @@ import { constants as fsConstants, realpathSync, writeSync } from "node:fs"
 import { access, chmod, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises"
 import { dirname, extname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { parseExpression } from "@babel/parser"
+import * as t from "@babel/types"
 import { createTwoFilesPatch } from "diff"
 import { validateConfig } from "./config.js"
 import { transform } from "./transform.js"
@@ -46,11 +48,11 @@ const HELP = `Usage: flag-prune [options] <file-or-directory...>
 Safely replace configured feature flags and remove dead code.
 
 Quick start:
-  flag-prune --flag hasFeature.newAccess=true src
-  flag-prune --flag ./flags#NEW_ACCESS=false --write src
+  npx flag-prune --flag hasFeature.newAccess=true src
+  npx flag-prune --flag 'useFlag("new-access")=false' --write src
 
 Options:
-  -f, --flag <rule>    Flag rule; repeatable (NAME.path=true or module#EXPORT=false)
+  -f, --flag <rule>    Flag rule; repeatable (NAME.path=true or 'CALL("key")=false')
   -c, --config <path>  JSON config (auto-detected when no --flag is given)
   -w, --write          Write changes atomically
       --check          Exit 1 when files would change
@@ -72,22 +74,75 @@ function requireValue(args: string[], index: number, option: string): string {
   return value
 }
 
+function parseStaticArguments(source: string, rule: string): NonNullable<FlagDefinition["arguments"]> {
+  let expression: t.Expression
+  try {
+    expression = parseExpression(`[${source}]`)
+  } catch {
+    throw new Error(`invalid --flag call: ${rule}; arguments must be static JSON primitives`)
+  }
+  if (!t.isArrayExpression(expression)) throw new Error(`invalid --flag call: ${rule}`)
+  return expression.elements.map((element) => {
+    if (t.isStringLiteral(element) || t.isNumericLiteral(element) || t.isBooleanLiteral(element)) {
+      return element.value
+    }
+    if (
+      t.isUnaryExpression(element, { operator: "-" }) &&
+      t.isNumericLiteral(element.argument)
+    ) {
+      return -element.argument.value
+    }
+    if (t.isNullLiteral(element)) return null
+    throw new Error(`invalid --flag call: ${rule}; arguments must be static JSON primitives`)
+  })
+}
+
+function parseDirectCall(
+  access: string,
+  moduleName: string | undefined,
+  value: boolean,
+  rule: string,
+): FlagDefinition | undefined {
+  const opening = access.indexOf("(")
+  if (opening < 0) return undefined
+  if (!access.endsWith(")") || access.indexOf("(", opening + 1) >= 0) {
+    throw new Error(`invalid --flag call: ${rule}`)
+  }
+  const call = access.slice(0, opening)
+  if (!/^[$A-Z_a-z][$\w]*(?:\.[$A-Z_a-z][$\w]*)*$/.test(call)) {
+    throw new Error(`invalid --flag call: ${rule}; expected CALL("key")=true`)
+  }
+  return {
+    ...(moduleName === undefined ? {} : { module: moduleName }),
+    call,
+    arguments: parseStaticArguments(access.slice(opening + 1, -1), rule),
+    value,
+  }
+}
+
 function parseDirectFlag(rule: string): FlagDefinition {
   const separator = rule.lastIndexOf("=")
   const rawSelector = separator < 0 ? "" : rule.slice(0, separator)
   const rawValue = separator < 0 ? "" : rule.slice(separator + 1)
   if (rawSelector.length === 0 || (rawValue !== "true" && rawValue !== "false")) {
-    throw new Error(`invalid --flag rule: ${rule}; expected NAME.path=true or module#EXPORT=false`)
+    throw new Error(`invalid --flag rule: ${rule}; expected NAME.path=true or CALL("key")=false`)
   }
 
-  const optional = rawSelector.includes("?.")
-  const selector = rawSelector.replaceAll("?.", ".")
-  const moduleSeparator = selector.indexOf("#")
-  const moduleName = moduleSeparator < 0 ? undefined : selector.slice(0, moduleSeparator)
-  const access = moduleSeparator < 0 ? selector : selector.slice(moduleSeparator + 1)
+  const opening = rawSelector.indexOf("(")
+  const possibleModuleSeparator = rawSelector.indexOf("#")
+  const moduleSeparator =
+    possibleModuleSeparator >= 0 && (opening < 0 || possibleModuleSeparator < opening)
+      ? possibleModuleSeparator
+      : -1
+  const moduleName = moduleSeparator < 0 ? undefined : rawSelector.slice(0, moduleSeparator)
+  const rawAccess = moduleSeparator < 0 ? rawSelector : rawSelector.slice(moduleSeparator + 1)
+  if (moduleName === "") throw new Error(`invalid --flag selector: ${rawSelector}`)
+  const directCall = parseDirectCall(rawAccess, moduleName, rawValue === "true", rule)
+  if (directCall !== undefined) return directCall
+  const optional = rawAccess.includes("?.")
+  const access = rawAccess.replaceAll("?.", ".")
   const parts = access.split(".")
   if (
-    moduleName === "" ||
     parts.length === 0 ||
     parts.some((part) => !/^[$A-Z_a-z][$\w]*$/.test(part))
   ) {

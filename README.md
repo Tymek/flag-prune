@@ -2,33 +2,59 @@
 
 `flag-prune` is a conservative JS/TS/JSX/TSX codemod for removing feature flags. Its `flag-prune` CLI replaces configured flag reads with known booleans, folds expressions to a fixed point, removes dead control flow, preserves required evaluation and side effects, cleans configured imports, reparses output, and reports every transformation.
 
-## Install and use
+## Run without installing
 
 ```sh
-pnpm add -D flag-prune
+npx flag-prune --flag hasFeature.newAccessControl=true src
 ```
 
-Preview one flag without creating a config file:
+This previews the diff. Apply it after review:
 
 ```sh
-flag-prune --flag hasFeature.newAccessControl=true src
+npx flag-prune --flag hasFeature.newAccessControl=true --write src
 ```
 
-Apply it after reviewing the diff:
+Equivalent one-off runners:
 
 ```sh
-flag-prune --flag hasFeature.newAccessControl=true --write src
+pnpm dlx flag-prune --flag hasFeature.newAccessControl=true src
+yarn dlx flag-prune --flag hasFeature.newAccessControl=true src
+bunx flag-prune --flag hasFeature.newAccessControl=true src
 ```
 
 Imported flags use `module#export.path=value`:
 
 ```sh
-flag-prune --flag ./features#hasFeature.newAccessControl=true --write src
+npx flag-prune --flag ./features#hasFeature.newAccessControl=true --write src
 ```
 
 This leaves a bare `import "./features"` to preserve module initialization. Add `--remove-side-effect-imports` only when that module is proven side-effect-free.
 
-Repeat `--flag` for related flags. For approved calls, verification settings, or reusable migrations, create `flag-prune.config.json`:
+## Function and method calls
+
+Calls use their exact source shape. Quote the rule so the shell does not interpret parentheses:
+
+```sh
+npx flag-prune --flag 'useFlag("new-access")=false' src
+npx flag-prune --flag 'client.isEnabled("new-access")=false' --write src
+```
+
+Matching is provider-agnostic: any static dotted function name works. The callee, argument count, and every argument must match exactly; arguments must be string, number, boolean, or `null` literals. Dynamic keys stay untouched.
+
+Assigned results are propagated safely. For example:
+
+```ts
+const enabled = useFlag("new-access")
+if (enabled) {
+  showNewAccess()
+} else {
+  showLegacyAccess()
+}
+```
+
+With `'useFlag("new-access")=false'`, this becomes `showLegacyAccess();`; the now-unused `enabled` binding is removed. Imported functions are matched through aliases and local shadowing is not changed.
+
+Repeat `--flag` for related flags. For reusable migrations or verification settings, create `flag-prune.config.json`:
 
 ```json
 {
@@ -41,7 +67,7 @@ Repeat `--flag` for related flags. For approved calls, verification settings, or
     },
     {
       "module": "./features",
-      "call": "featureEnabled",
+      "call": "featureClient.isEnabled",
       "arguments": ["legacy-export"],
       "value": false
     }
@@ -61,13 +87,13 @@ Repeat `--flag` for related flags. For approved calls, verification settings, or
 With the default config filename, the CLI finds it automatically:
 
 ```sh
-flag-prune src
+npx flag-prune src
 ```
 
 Write atomically and run project checks:
 
 ```sh
-flag-prune --write --typecheck --lint --test src
+npx flag-prune --write --typecheck --lint --test src
 ```
 
 Use `--check` in CI to fail when changes remain and `--json` for machine-readable reports.
@@ -92,7 +118,7 @@ console.log(result.code)
 console.log(result.report)
 ```
 
-Module-backed definitions match the exact import binding, including aliases, and never match shadowing declarations. Global/identifier definitions bind to the program-level declaration when one exists; otherwise they match only unresolved references. Static calls require exact primitive arguments. Optional access is matched only with `"optional": true`.
+Module-backed definitions match the exact import binding, including aliases, and never match shadowing declarations. Global/identifier definitions bind to the program-level declaration when one exists; otherwise they match only unresolved references. Static calls support dotted callees and require exact primitive arguments. Optional access is matched only with `"optional": true`.
 
 ## Safety rules
 

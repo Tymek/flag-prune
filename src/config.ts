@@ -15,6 +15,9 @@ function validateFlag(flag: unknown, index: number): FlagDefinition {
   if (value.export !== undefined && typeof value.export !== "string") fail(`flags[${index}].export must be string`)
   if (value.identifier !== undefined && typeof value.identifier !== "string") fail(`flags[${index}].identifier must be string`)
   if (value.call !== undefined && typeof value.call !== "string") fail(`flags[${index}].call must be string`)
+  if (typeof value.call === "string" && !/^[$A-Z_a-z][$\w]*(?:\.[$A-Z_a-z][$\w]*)*$/.test(value.call)) {
+    fail(`flags[${index}].call must be a static dotted function name`)
+  }
   if (value.optional !== undefined && typeof value.optional !== "boolean") fail(`flags[${index}].optional must be boolean`)
   if (value.path !== undefined && (!Array.isArray(value.path) || value.path.some((part) => typeof part !== "string"))) {
     fail(`flags[${index}].path must be a string array`)
