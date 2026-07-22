@@ -6,7 +6,7 @@ import { constantOf, isRemovablePure, requiredEffects } from "./analysis.js"
 import { validateConfig } from "./config.js"
 import { buildMatchers, matchCall, matchValue, type FlagMatcher } from "./matchers.js"
 import { simplifyPass } from "./simplify.js"
-import type { TransformOptions, TransformReport, TransformResult } from "./types.js"
+import type { FlagValue, TransformOptions, TransformReport, TransformResult } from "./types.js"
 
 type BabelParserPlugins = NonNullable<NonNullable<Parameters<typeof parseWithBabel>[1]>["plugins"]>
 
@@ -85,8 +85,35 @@ function preferredQuote(ast: t.File): "single" | "double" {
 interface ReplacementState {
   matchers: FlagMatcher[]
   matchedBindings: Set<Binding>
-  booleanBindings: Map<Binding, boolean>
+  constantBindings: Map<Binding, FlagValue>
   report: TransformReport
+}
+
+function literalFor(value: FlagValue): t.Expression {
+  if (value === null) return t.nullLiteral()
+  if (typeof value === "string") return t.stringLiteral(value)
+  if (typeof value === "number") {
+    return value < 0 || Object.is(value, -0)
+      ? t.unaryExpression("-", t.numericLiteral(Math.abs(value)))
+      : t.numericLiteral(value)
+  }
+  return t.booleanLiteral(value)
+}
+
+function flagValueOf(matcher: FlagMatcher): FlagValue {
+  return matcher.flag.value === undefined ? true : matcher.flag.value
+}
+
+function recordConstantBinding(
+  path: NodePath<t.Expression>,
+  value: FlagValue,
+  state: ReplacementState,
+): void {
+  const parent = path.parentPath
+  if (parent.isVariableDeclarator() && parent.node.init === path.node && t.isIdentifier(parent.node.id)) {
+    const binding = parent.scope.getBinding(parent.node.id.name)
+    if (binding?.constant === true) state.constantBindings.set(binding, value)
+  }
 }
 
 function disableObjectShorthand(path: NodePath<t.Expression>): void {
@@ -133,7 +160,9 @@ function argumentEffects(path: NodePath<t.Expression>): t.Expression[] {
 
 function replacementFor(path: NodePath<t.Expression>, matcher: FlagMatcher, state: ReplacementState): boolean {
   if (matcher.kind !== "value" || !matchValue(path, matcher)) return false
-  const replacement = t.booleanLiteral(matcher.flag.value ?? true)
+  const value = flagValueOf(matcher)
+  recordConstantBinding(path, value, state)
+  const replacement = literalFor(value)
   t.inheritsComments(replacement, path.node)
   disableObjectShorthand(path)
   path.replaceWith(replacement)
@@ -148,12 +177,8 @@ function callReplacement(
   state: ReplacementState,
 ): boolean {
   if (matcher.kind !== "call" || !matchCall(path, matcher)) return false
-  const value = matcher.flag.value ?? true
-  const parent = path.parentPath
-  if (parent.isVariableDeclarator() && parent.node.init === path.node && t.isIdentifier(parent.node.id)) {
-    const binding = parent.scope.getBinding(parent.node.id.name)
-    if (binding?.constant === true) state.booleanBindings.set(binding, value)
-  }
+  const value = flagValueOf(matcher)
+  recordConstantBinding(path, value, state)
   const effects: t.Expression[] = []
   for (const argumentPath of path.get("arguments").slice(matcher.arguments.length)) {
     if (argumentPath.isSpreadElement()) {
@@ -162,7 +187,7 @@ function callReplacement(
       effects.push(...argumentEffects(argumentPath))
     }
   }
-  const literal = t.booleanLiteral(value)
+  const literal = literalFor(value)
   const replacement = effects.length === 0 ? literal : t.sequenceExpression([...effects, literal])
   t.inheritsComments(replacement, path.node)
   path.replaceWith(replacement)
@@ -172,8 +197,8 @@ function callReplacement(
   return true
 }
 
-function inlineBooleanBindings(state: ReplacementState): void {
-  for (const [binding, value] of state.booleanBindings) {
+function inlineConstantBindings(state: ReplacementState): void {
+  for (const [binding, value] of state.constantBindings) {
     for (const reference of binding.referencePaths) {
       if (
         reference.removed ||
@@ -183,7 +208,7 @@ function inlineBooleanBindings(state: ReplacementState): void {
       ) {
         continue
       }
-      const replacement = t.booleanLiteral(value)
+      const replacement = literalFor(value)
       t.inheritsComments(replacement, reference.node)
       disableObjectShorthand(reference as NodePath<t.Expression>)
       reference.replaceWith(replacement)
@@ -194,7 +219,7 @@ function inlineBooleanBindings(state: ReplacementState): void {
 }
 
 function replaceFlags(ast: t.File, matchers: FlagMatcher[], report: TransformReport): Set<Binding> {
-  const state: ReplacementState = { matchers, matchedBindings: new Set(), booleanBindings: new Map(), report }
+  const state: ReplacementState = { matchers, matchedBindings: new Set(), constantBindings: new Map(), report }
   traverse(ast, {
     CallExpression: {
       exit(path) {
@@ -232,7 +257,7 @@ function replaceFlags(ast: t.File, matchers: FlagMatcher[], report: TransformRep
       },
     },
   })
-  inlineBooleanBindings(state)
+  inlineConstantBindings(state)
   return state.matchedBindings
 }
 

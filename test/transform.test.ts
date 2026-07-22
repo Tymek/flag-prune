@@ -132,6 +132,37 @@ client.isEnabled("other", context)`
     ])).toMatchObject({ code: source, changed: false })
   })
 
+  it("resolves a string-valued flag through strict equality", () => {
+    const source = `const variant = getVariant("checkout")
+if (variant === "treatment") showNew(); else showOld()`
+    const treatment = run(source, [{ call: "getVariant", arguments: ["checkout"], value: "treatment" }])
+    expect(treatment.code).toBe("showNew();\n")
+    const control = run(source, [{ call: "getVariant", arguments: ["checkout"], value: "control" }])
+    expect(control.code).toBe("showOld();\n")
+  })
+
+  it("treats a non-empty string flag as truthy and null as falsy", () => {
+    const truthy = run("if (readTier()) pro(); else free()", [{ call: "readTier", value: "enterprise" }])
+    expect(truthy.code).toBe("pro();\n")
+    const nullish = run("if (readTier()) pro(); else free()", [{ call: "readTier", value: null }])
+    expect(nullish.code).toBe("free();\n")
+  })
+
+  it("resolves a numeric member flag through comparison", () => {
+    const source = "if (limits.maxSeats >= 10) enterprise(); else starter()"
+    const result = run(source, [{ identifier: "limits", path: ["maxSeats"], value: 25 }])
+    expect(result.code).toBe("enterprise();\n")
+    expect(run(source, [{ identifier: "limits", path: ["maxSeats"], value: 3 }]).code).toBe("starter();\n")
+  })
+
+  it("is idempotent for a string-valued flag migration", () => {
+    const source = `const variant = getVariant("checkout")
+if (variant === "treatment") showNew(); else showOld()`
+    const once = run(source, [{ call: "getVariant", arguments: ["checkout"], value: "treatment" }]).code
+    const twice = run(once, [{ call: "getVariant", arguments: ["checkout"], value: "treatment" }]).code
+    expect(twice).toBe(once)
+  })
+
   it("inlines a fixed call result and removes its dead branch and binding", () => {
     const source = `const x = useFlag("y")
 if (x) {

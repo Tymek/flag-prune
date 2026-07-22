@@ -8,6 +8,7 @@ import {
   isRemovablePure,
   requiredEffects,
   sequenceWithResult,
+  truthinessOf,
 } from "./analysis.js"
 import type { CommentPolicy, TransformReport } from "./types.js"
 
@@ -308,7 +309,7 @@ function replaceStatement(path: NodePath<t.Statement>, statements: t.Statement[]
 
 function simplifyIf(path: NodePath<t.IfStatement>, state: PassState): void {
   const test = expressionPath(path, "test")
-  const constant = constantOf(test.node)
+  const constant = truthinessOf(test.node)
   if (constant === "unknown") return
   const effects = conditionEffects(test, state)
   if (effects === undefined) return
@@ -326,7 +327,7 @@ function simplifyIf(path: NodePath<t.IfStatement>, state: PassState): void {
 
 function simplifyConditional(path: NodePath<t.ConditionalExpression>, state: PassState): void {
   const test = expressionPath(path, "test")
-  const constant = constantOf(test.node)
+  const constant = truthinessOf(test.node)
   if (constant === "unknown") return
   const effects = conditionEffects(test, state)
   if (effects === undefined) return
@@ -340,7 +341,7 @@ function simplifyConditional(path: NodePath<t.ConditionalExpression>, state: Pas
 
 function simplifyWhile(path: NodePath<t.WhileStatement>, state: PassState): void {
   const test = expressionPath(path, "test")
-  if (constantOf(test.node) !== false) return
+  if (truthinessOf(test.node) !== false) return
   const effects = conditionEffects(test, state)
   if (effects === undefined) return
   const retained = processRemovedComments(path.node.body, state)
@@ -352,7 +353,7 @@ function simplifyWhile(path: NodePath<t.WhileStatement>, state: PassState): void
 function simplifyFor(path: NodePath<t.ForStatement>, state: PassState): void {
   if (path.node.test === null) return
   const test = expressionPath(path, "test")
-  if (constantOf(test.node) !== false) return
+  if (truthinessOf(test.node) !== false) return
   const effects = conditionEffects(test, state)
   if (effects === undefined) return
   const statements: t.Statement[] = []
@@ -383,7 +384,7 @@ function hasLoopControl(body: t.Statement): boolean {
 
 function simplifyDoWhile(path: NodePath<t.DoWhileStatement>, state: PassState): void {
   const test = expressionPath(path, "test")
-  if (constantOf(test.node) !== false || hasLoopControl(path.node.body)) return
+  if (truthinessOf(test.node) !== false || hasLoopControl(path.node.body)) return
   const effects = conditionEffects(test, state)
   if (effects === undefined) return
   replaceStatement(

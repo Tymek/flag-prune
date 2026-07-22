@@ -28,19 +28,86 @@ function unwrap(node: t.Expression): t.Expression {
   return node
 }
 
+export type LiteralPrimitive = string | number | boolean | bigint | null
+
+function literalPrimitive(input: t.Expression): { value: LiteralPrimitive } | undefined {
+  const node = unwrap(input)
+  if (t.isBooleanLiteral(node) || t.isStringLiteral(node) || t.isNumericLiteral(node)) {
+    return { value: node.value }
+  }
+  if (t.isNullLiteral(node)) return { value: null }
+  if (t.isBigIntLiteral(node)) {
+    try {
+      return { value: BigInt(String(node.value).replace(/_/g, "")) }
+    } catch {
+      return undefined
+    }
+  }
+  if (t.isUnaryExpression(node) && t.isExpression(node.argument)) {
+    const inner = literalPrimitive(node.argument)
+    if (inner === undefined) return undefined
+    if (node.operator === "!") return { value: !truthy(inner.value) }
+    if (node.operator === "-" && (typeof inner.value === "number" || typeof inner.value === "bigint")) {
+      return { value: -inner.value }
+    }
+    return undefined
+  }
+  return undefined
+}
+
+function truthy(value: LiteralPrimitive): boolean {
+  if (typeof value === "number") return value !== 0 && !Number.isNaN(value)
+  if (typeof value === "bigint") return value !== 0n
+  if (typeof value === "string") return value.length > 0
+  if (typeof value === "boolean") return value
+  return false
+}
+
+function foldComparison(operator: string, left: LiteralPrimitive, right: LiteralPrimitive): ConstantBoolean {
+  const sameType = typeof left === typeof right
+  switch (operator) {
+    case "===":
+      return left === right
+    case "!==":
+      return left !== right
+    case "==":
+      return sameType ? left === right : "unknown"
+    case "!=":
+      return sameType ? left !== right : "unknown"
+    default:
+      break
+  }
+  if (!sameType || typeof left === "boolean" || left === null) return "unknown"
+  const a = left as number
+  const b = right as number
+  switch (operator) {
+    case "<":
+      return a < b
+    case "<=":
+      return a <= b
+    case ">":
+      return a > b
+    case ">=":
+      return a >= b
+    default:
+      return "unknown"
+  }
+}
+
+const COMPARISON_OPERATORS = new Set(["===", "!==", "==", "!=", "<", "<=", ">", ">="])
+
 export function constantOf(input: t.Expression): ConstantBoolean {
   const node = unwrap(input)
   if (t.isBooleanLiteral(node)) return node.value
   if (t.isSequenceExpression(node)) return constantOf(node.expressions.at(-1)!)
-  if (t.isUnaryExpression(node, { operator: "!" })) {
-    const argument = constantOf(node.argument as t.Expression)
+  if (t.isUnaryExpression(node, { operator: "!" }) && t.isExpression(node.argument)) {
+    const argument = truthinessOf(node.argument)
     return argument === "unknown" ? "unknown" : !argument
   }
-  if (t.isBinaryExpression(node) && ["===", "!==", "==", "!="].includes(node.operator)) {
-    if (t.isBooleanLiteral(node.left) && t.isBooleanLiteral(node.right)) {
-      const equal = node.left.value === node.right.value
-      return node.operator === "===" || node.operator === "==" ? equal : !equal
-    }
+  if (t.isBinaryExpression(node) && COMPARISON_OPERATORS.has(node.operator) && t.isExpression(node.left)) {
+    const left = literalPrimitive(node.left)
+    const right = literalPrimitive(node.right)
+    if (left !== undefined && right !== undefined) return foldComparison(node.operator, left.value, right.value)
   }
   if (t.isLogicalExpression(node)) {
     const left = constantOf(node.left)
@@ -57,11 +124,26 @@ export function constantOf(input: t.Expression): ConstantBoolean {
     }
   }
   if (t.isConditionalExpression(node)) {
-    const test = constantOf(node.test)
+    const test = truthinessOf(node.test)
     if (test === true) return constantOf(node.consequent)
     if (test === false) return constantOf(node.alternate)
   }
   return "unknown"
+}
+
+/** Truthiness of a constant expression, including non-boolean literals. */
+export function truthinessOf(input: t.Expression): ConstantBoolean {
+  const node = unwrap(input)
+  const primitive = literalPrimitive(node)
+  if (primitive !== undefined) return truthy(primitive.value)
+  if (t.isSequenceExpression(node)) return truthinessOf(node.expressions.at(-1)!)
+  if (t.isConditionalExpression(node)) {
+    const test = truthinessOf(node.test)
+    if (test === true) return truthinessOf(node.consequent)
+    if (test === false) return truthinessOf(node.alternate)
+    return "unknown"
+  }
+  return constantOf(node)
 }
 
 function purityOfNode(node: t.Expression, scope: Scope, position: number | null | undefined): Purity {

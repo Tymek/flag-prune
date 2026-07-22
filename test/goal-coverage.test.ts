@@ -30,6 +30,20 @@ const e = true
 `)
   })
 
+  it("folds numeric and string constant comparisons", () => {
+    const result = run(`const a = 1 < 2
+const b = 3 === 3
+const c = "x" === "y"
+const d = "beta" !== "alpha"
+const e = 2 >= 5`)
+    expect(result.code).toBe(`const a = true
+const b = true
+const c = false
+const d = true
+const e = false
+`)
+  })
+
   it("covers logical constants on both sides", () => {
     const result = run(`declare const flag: boolean
 declare const value: unknown

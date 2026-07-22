@@ -36,7 +36,13 @@ function validateFlag(flag: unknown, index: number): FlagDefinition {
   for (const key of Object.keys(value)) {
     if (!ALLOWED_FLAG_KEYS.has(key)) fail(`flags[${index}] has unknown key "${key}"`)
   }
-  if (value.value !== undefined && typeof value.value !== "boolean") fail(`flags[${index}].value must be boolean`)
+  if (
+    value.value !== undefined &&
+    value.value !== null &&
+    !["string", "number", "boolean"].includes(typeof value.value)
+  ) {
+    fail(`flags[${index}].value must be a string, number, boolean, or null`)
+  }
   if (value.module !== undefined && typeof value.module !== "string") fail(`flags[${index}].module must be string`)
   if (value.export !== undefined && typeof value.export !== "string") fail(`flags[${index}].export must be string`)
   if (value.identifier !== undefined && typeof value.identifier !== "string") fail(`flags[${index}].identifier must be string`)
@@ -68,7 +74,7 @@ function validateFlag(flag: unknown, index: number): FlagDefinition {
     fail(`flags[${index}] cannot combine module with identifier`)
   }
 
-  return { ...value, value: value.value ?? true } as unknown as FlagDefinition
+  return { ...value, value: value.value === undefined ? true : value.value } as unknown as FlagDefinition
 }
 
 export function validateConfig(input: unknown): FlagCleanConfig {

@@ -8,7 +8,7 @@ import * as t from "@babel/types"
 import { createTwoFilesPatch } from "diff"
 import { validateConfig } from "./config.js"
 import { transform } from "./transform.js"
-import type { FlagCleanConfig, FlagDefinition, TransformReport, VerificationConfig } from "./types.js"
+import type { FlagCleanConfig, FlagDefinition, FlagValue, TransformReport, VerificationConfig } from "./types.js"
 
 const VERSION = "1.0.0"
 const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"])
@@ -126,10 +126,47 @@ function parseStaticArguments(source: string, rule: string): NonNullable<FlagDef
   })
 }
 
+function parseValueToken(raw: string, rule: string): FlagValue {
+  if (raw.length === 0) throw new Error(`invalid --flag rule: ${rule}; expected a value after '='`)
+  if (raw === "true") return true
+  if (raw === "false") return false
+  if (raw === "null") return null
+  if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(raw)) return Number(raw)
+  if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
+    try {
+      return JSON.parse(raw) as string
+    } catch {
+      throw new Error(`invalid --flag rule: ${rule}; malformed quoted value`)
+    }
+  }
+  if (raw.length >= 2 && raw.startsWith("'") && raw.endsWith("'")) return raw.slice(1, -1)
+  return raw
+}
+
+/** Split a flag rule into its selector and replacement value at the first top-level '='. */
+function splitValue(rule: string): { selector: string; value: FlagValue } {
+  let depth = 0
+  let quote = ""
+  for (let index = 0; index < rule.length; index += 1) {
+    const character = rule[index]!
+    if (quote !== "") {
+      if (character === quote && rule[index - 1] !== "\\") quote = ""
+      continue
+    }
+    if (character === '"' || character === "'") quote = character
+    else if (character === "(" || character === "[") depth += 1
+    else if (character === ")" || character === "]") depth -= 1
+    else if (character === "=" && depth === 0) {
+      return { selector: rule.slice(0, index), value: parseValueToken(rule.slice(index + 1), rule) }
+    }
+  }
+  return { selector: rule, value: true }
+}
+
 function parseDirectCall(
   access: string,
   moduleName: string | undefined,
-  value: boolean,
+  value: FlagValue,
   rule: string,
 ): FlagDefinition | undefined {
   const opening = access.indexOf("(")
@@ -150,13 +187,7 @@ function parseDirectCall(
 }
 
 function parseDirectFlag(rule: string): FlagDefinition {
-  const falseSuffix = "=false"
-  const trueSuffix = "=true"
-  const hasFalseSuffix = rule.endsWith(falseSuffix)
-  const hasTrueSuffix = rule.endsWith(trueSuffix)
-  const suffixLength = hasFalseSuffix ? falseSuffix.length : hasTrueSuffix ? trueSuffix.length : 0
-  const rawSelector = suffixLength === 0 ? rule : rule.slice(0, -suffixLength)
-  const flagValue = !hasFalseSuffix
+  const { selector: rawSelector, value: flagValue } = splitValue(rule)
   if (rawSelector.length === 0) {
     throw new Error(`invalid --flag rule: ${rule}; expected NAME.path or CALL("key")`)
   }

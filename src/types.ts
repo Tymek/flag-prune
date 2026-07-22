@@ -9,6 +9,8 @@ export interface Analysis {
 
 export type FlagArgument = string | number | boolean | null
 
+export type FlagValue = string | number | boolean | null
+
 export interface FlagDefinition {
   /** Exact module specifier from an import declaration. */
   module?: string
@@ -24,7 +26,7 @@ export interface FlagDefinition {
   /** Required for matching optional member access or optional calls. */
   optional?: boolean
   /** Replacement value. Defaults to true. */
-  value?: boolean
+  value?: FlagValue
 }
 
 export type CommentPolicy = "report" | "preserve" | "discard"

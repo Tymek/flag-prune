@@ -344,4 +344,15 @@ describe("flag-prune process", () => {
     expect(result.code).toBe(2)
     expect(result.stderr).toContain("skipped symlink")
   })
+
+  it("accepts a string-valued flag rule", async () => {
+    const cwd = await fixture()
+    await writeFile(
+      join(cwd, "input.ts"),
+      'const tier = readTier()\nif (tier === "pro") pro(); else free();\n',
+    )
+    const result = await invoke(["--flag", 'readTier()=pro', "--write", "input.ts"], cwd)
+    expect(result).toMatchObject({ code: 0, stderr: "" })
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("pro();\n")
+  })
 })
