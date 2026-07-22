@@ -1,6 +1,6 @@
 # flag-prune
 
-`flag-prune` is a conservative JS/TS/JSX/TSX codemod for removing feature flags. Its `flag-prune` CLI replaces configured flag reads with known booleans, folds expressions to a fixed point, removes dead control flow, preserves required evaluation and side effects, cleans configured imports, reparses output, and reports every transformation.
+`flag-prune` is a conservative JS/TS/JSX/TSX codemod for removing feature flags. It replaces configured flag reads with their known values, folds expressions to a fixed point, removes dead control flow, preserves required evaluation and side effects, cleans configured imports, reparses the output, and reports every transformation.
 
 ## Run without installing
 
@@ -8,11 +8,15 @@
 npx flag-prune --flag hasFeature.newAccessControl src
 ```
 
-Omitting `=true` or `=false` defaults to `true`. This previews the diff. Apply it after review:
+This previews the diff without touching files. Apply it after review:
 
 ```sh
 npx flag-prune --flag hasFeature.newAccessControl=true --write src
 ```
+
+> **A rule with no `=value` defaults to `true`.** `--flag hasFeature.x` is the
+> same as `--flag hasFeature.x=true` and removes the *disabled* branch. Always
+> pass `=false` explicitly when you are turning a flag off.
 
 Equivalent one-off runners:
 
@@ -40,6 +44,17 @@ npx flag-prune --flag 'client.isEnabled("new-access")' --write src
 ```
 
 Matching is provider-agnostic: any static dotted function name works. Configured arguments are an exact required prefix and must be string, number, boolean, or `null` literals. Additional caller arguments are allowed, so `client.isEnabled("new-access", context)` matches the second rule. Their evaluation and side effects are preserved. Dynamic keys stay untouched.
+
+## Non-boolean values
+
+Flags are not limited to booleans. A rule value may be a string, number, or `null`, which lets variant and tier flags resolve through comparisons:
+
+```sh
+npx flag-prune --flag 'getVariant("checkout")=treatment' src
+npx flag-prune --flag 'limits.maxSeats=25' src
+```
+
+Given `getVariant("checkout") = "treatment"`, an expression like `variant === "treatment"` folds to `true` and its branch is selected. Numeric and string comparisons (`===`, `!==`, `<`, `<=`, `>`, `>=`) and `??` around resolved values fold too, so `config.featureToggles.newList ?? false` collapses.
 
 Assigned results are propagated safely. For example:
 
@@ -94,6 +109,35 @@ Write atomically and run project checks:
 ```sh
 npx flag-prune --write --typecheck --lint --test src
 ```
+
+Verification commands run after the files are written; if any check fails the
+writes are rolled back. Verification also works on a dry run (without `--write`)
+by applying the change transiently and restoring the source afterward.
+
+> **Security:** `verify.typecheck`, `verify.lint`, and `verify.tests` are run
+> through a shell. A checked-in `flag-prune.config.json` therefore executes
+> arbitrary commands — review it like any other build script before running.
+
+## CLI reference
+
+Common options (`--help` lists them all):
+
+| Option | Effect |
+| --- | --- |
+| `-f, --flag <rule>` | Flag rule; repeatable; also `-f=RULE` |
+| `-c, --config <path>` | JSON config; auto-detected and merged with `--flag` |
+| `-w, --write` / `--dry-run` | Write atomically / preview only (default) |
+| `--check` | Exit 1 when files would change |
+| `--strict` | Exit 2 when any warning is emitted |
+| `--json` / `--diff` / `--no-diff` | Report format |
+| `--ignore <name>` | Extra directory name to skip; repeatable |
+| `--comment-policy <report\|preserve\|discard>` | Handling of comments on removed code |
+| `--no-remove-unused-imports` | Keep imports after their flag binding is removed |
+| `--skip-effectful-conditions` | Leave constant conditions whose test has effects |
+
+Exit codes: `0` success, `1` `--check` found changes, `2` usage/processing
+error (also `--strict` warnings or non-convergence). `.d.ts` files are skipped,
+and nested symlinks are skipped with a warning.
 
 Use `--check` in CI to fail when changes remain and `--json` for machine-readable reports.
 

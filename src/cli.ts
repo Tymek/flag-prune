@@ -85,9 +85,9 @@ Options:
                         Leave constant conditions whose test still has effects
       --max-passes <n>  Cap simplification passes (default 20)
       --no-parse-check  Skip reparsing the generated output
-      --typecheck      Run configured/default typecheck (requires --write)
-      --lint           Run configured/default lint (requires --write)
-      --test           Run configured/default tests (requires --write)
+      --typecheck      Run configured/default typecheck (rolls back on failure)
+      --lint           Run configured/default lint (rolls back on failure)
+      --test           Run configured/default tests (rolls back on failure)
   -h, --help           Show help
   -v, --version        Show version
 
