@@ -6,7 +6,6 @@ import {
   isBoolean,
   isPureStableBoolean,
   isRemovablePure,
-  purityOf,
   requiredEffects,
   sequenceWithResult,
 } from "./analysis.js"
@@ -26,10 +25,6 @@ interface PassState {
 
 function expressionPath(path: NodePath, key: string): NodePath<t.Expression> {
   return path.get(key) as NodePath<t.Expression>
-}
-
-function hasComments(node: t.Node): boolean {
-  return Boolean(node.leadingComments?.length || node.innerComments?.length || node.trailingComments?.length)
 }
 
 function replaceExpression(path: NodePath<t.Expression>, replacement: t.Expression, state: PassState): void {
@@ -87,6 +82,16 @@ interface Formula {
 }
 
 function buildFormula(path: NodePath<t.Expression>, atoms: Map<string, t.Identifier>): Formula | undefined {
+  if (
+    path.isParenthesizedExpression() ||
+    path.isTSAsExpression() ||
+    path.isTSSatisfiesExpression() ||
+    path.isTSTypeAssertion() ||
+    path.isTSNonNullExpression() ||
+    path.isTypeCastExpression()
+  ) {
+    return buildFormula(expressionPath(path, "expression"), atoms)
+  }
   if (path.isBooleanLiteral()) return { evaluate: () => path.node.value }
   if (path.isIdentifier()) {
     if (!isPureStableBoolean(path)) return undefined

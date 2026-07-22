@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { constants as fsConstants } from "node:fs"
+import { constants as fsConstants, realpathSync, writeSync } from "node:fs"
 import { access, chmod, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises"
 import { dirname, extname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -34,8 +34,8 @@ interface FileResult {
 
 export interface CliIo {
   cwd: string
-  stdout: Pick<NodeJS.WriteStream, "write">
-  stderr: Pick<NodeJS.WriteStream, "write">
+  stdout: { write(value: string): unknown }
+  stderr: { write(value: string): unknown }
 }
 
 const HELP = `Usage: flag-clean [options] <file-or-directory...>
@@ -309,5 +309,13 @@ export async function runCli(
   }
 }
 
-const isEntryPoint = process.argv[1] !== undefined && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))
-if (isEntryPoint) process.exitCode = await runCli(process.argv.slice(2))
+const isEntryPoint =
+  process.argv[1] !== undefined &&
+  realpathSync(resolve(process.argv[1])) === realpathSync(resolve(fileURLToPath(import.meta.url)))
+if (isEntryPoint) {
+  process.exitCode = await runCli(process.argv.slice(2), {
+    cwd: process.cwd(),
+    stdout: { write: (value) => writeSync(1, value) },
+    stderr: { write: (value) => writeSync(2, value) },
+  })
+}

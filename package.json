@@ -22,9 +22,9 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "node scripts/build.mjs && vitest run",
     "test:package": "node scripts/test-package.mjs",
-    "pack:check": "pnpm build && publint && attw --pack .",
+    "pack:check": "pnpm build && node scripts/package-check.mjs",
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm pack:check && pnpm test:package"
   },
   "keywords": [
@@ -47,13 +47,14 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
+    "@eslint/js": "^10.0.1",
     "@types/babel__generator": "^7.27.0",
     "@types/babel__traverse": "^7.28.0",
     "@types/node": "^26.1.1",
     "esbuild": "^0.28.1",
     "eslint": "^10.7.0",
     "publint": "^0.3.21",
-    "typescript": "^7.0.2",
+    "typescript": "^6.0.3",
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.10"
   }
