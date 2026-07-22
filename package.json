@@ -1,20 +1,60 @@
 {
   "name": "flagrm",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "^11.13.0",
-      "onFail": "download"
+  "description": "Safe, deterministic feature-flag removal codemod for JavaScript and TypeScript",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
-  "type": "module"
+  "bin": {
+    "flag-clean": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:package": "node scripts/test-package.mjs",
+    "pack:check": "pnpm build && publint && attw --pack .",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm pack:check && pnpm test:package"
+  },
+  "keywords": [
+    "codemod",
+    "feature-flags",
+    "typescript",
+    "cli"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.9.0",
+  "dependencies": {
+    "@babel/generator": "^8.0.0",
+    "@babel/parser": "^8.0.4",
+    "@babel/traverse": "^8.0.4",
+    "@babel/types": "^8.0.4",
+    "diff": "^9.0.0"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@types/babel__generator": "^7.27.0",
+    "@types/babel__traverse": "^7.28.0",
+    "@types/node": "^26.1.1",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.7.0",
+    "publint": "^0.3.21",
+    "typescript": "^7.0.2",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10"
+  }
 }
