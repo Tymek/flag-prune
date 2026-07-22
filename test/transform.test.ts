@@ -155,6 +155,16 @@ if (variant === "treatment") showNew(); else showOld()`
     expect(run(source, [{ identifier: "limits", path: ["maxSeats"], value: 3 }]).code).toBe("starter();\n")
   })
 
+  it("folds nullish coalescing around a resolved flag", () => {
+    const source = "if (config.featureToggles.newList ?? false) newList(); else oldList()"
+    const enabled = run(source, [{ identifier: "config", path: ["featureToggles", "newList"], value: true }])
+    expect(enabled.code).toBe("newList();\n")
+    const disabled = run(source, [{ identifier: "config", path: ["featureToggles", "newList"], value: false }])
+    expect(disabled.code).toBe("oldList();\n")
+    const nullable = run("const value = readConfig() ?? fallback", [{ call: "readConfig", value: null }])
+    expect(nullable.code).toBe("const value = fallback\n")
+  })
+
   it("is idempotent for a string-valued flag migration", () => {
     const source = `const variant = getVariant("checkout")
 if (variant === "treatment") showNew(); else showOld()`

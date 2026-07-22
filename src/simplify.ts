@@ -6,6 +6,7 @@ import {
   isBoolean,
   isPureStableBoolean,
   isRemovablePure,
+  literalPrimitiveOf,
   requiredEffects,
   sequenceWithResult,
   truthinessOf,
@@ -139,6 +140,15 @@ function formulaReplacement(path: NodePath<t.Expression>, limit: number): t.Expr
 function simplifyLogical(path: NodePath<t.LogicalExpression>, state: PassState): void {
   const left = expressionPath(path, "left")
   const right = expressionPath(path, "right")
+
+  if (path.node.operator === "??") {
+    const coalesced = literalPrimitiveOf(left.node)
+    if (coalesced !== undefined) {
+      replaceExpression(path, coalesced.value === null ? right.node : left.node, state)
+    }
+    return
+  }
+
   const leftConstant = constantOf(left.node)
 
   if (leftConstant !== "unknown") {

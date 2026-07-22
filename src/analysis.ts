@@ -30,6 +30,10 @@ function unwrap(node: t.Expression): t.Expression {
 
 export type LiteralPrimitive = string | number | boolean | bigint | null
 
+export function literalPrimitiveOf(input: t.Expression): { value: LiteralPrimitive } | undefined {
+  return literalPrimitive(input)
+}
+
 function literalPrimitive(input: t.Expression): { value: LiteralPrimitive } | undefined {
   const node = unwrap(input)
   if (t.isBooleanLiteral(node) || t.isStringLiteral(node) || t.isNumericLiteral(node)) {
@@ -110,6 +114,11 @@ export function constantOf(input: t.Expression): ConstantBoolean {
     if (left !== undefined && right !== undefined) return foldComparison(node.operator, left.value, right.value)
   }
   if (t.isLogicalExpression(node)) {
+    if (node.operator === "??") {
+      const coalesced = literalPrimitive(node.left)
+      if (coalesced !== undefined) return coalesced.value === null ? constantOf(node.right) : truthy(coalesced.value)
+      return "unknown"
+    }
     const left = constantOf(node.left)
     const right = constantOf(node.right)
     if (node.operator === "&&") {
