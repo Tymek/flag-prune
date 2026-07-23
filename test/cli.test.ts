@@ -15,9 +15,13 @@ afterEach(async () => {
 function invoke(
   args: string[],
   cwd = resolve("."),
+  env?: NodeJS.ProcessEnv,
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [resolve("dist/cli.js"), ...args], { cwd })
+    const child = spawn(process.execPath, [resolve("dist/cli.js"), ...args], {
+      cwd,
+      ...(env === undefined ? {} : { env }),
+    })
     let stdout = ""
     let stderr = ""
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()))
@@ -240,6 +244,26 @@ describe("flag-prune process", () => {
     const result = await invoke(["--set", 'getVariant("x")={ enabled: }', "input.ts"], cwd)
     expect(result.code).toBe(2)
     expect(result.stderr).toContain("malformed object or array literal")
+  })
+
+  it("colorizes the diff only when requested", async () => {
+    const cwd = await fixture()
+    const cleanEnv = { ...process.env }
+    delete cleanEnv.FORCE_COLOR
+    delete cleanEnv.NO_COLOR
+    const plain = await invoke(["--set", "FLAG=true", "input.ts"], cwd, cleanEnv)
+    expect(plain.stdout).not.toContain("\u001B[")
+    const colored = await invoke(["--set", "FLAG=true", "--color=always", "input.ts"], cwd)
+    expect(colored.stdout).toContain("\u001B[32m")
+    expect(colored.stdout).toContain("\u001B[31m")
+    const forcedOff = await invoke(["--set", "FLAG=true", "--color=always", "--no-color", "input.ts"], cwd)
+    expect(forcedOff.stdout).not.toContain("\u001B[")
+  })
+
+  it("rejects an invalid --color value", async () => {
+    const result = await invoke(["--set", "FLAG=true", "--color=rainbow", "input.ts"])
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain("--color must be auto, always, or never")
   })
 
   it("accepts an exact call rule and removes an assigned flag binding", async () => {

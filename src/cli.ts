@@ -20,6 +20,7 @@ interface CliArguments {
   check: boolean
   diff: boolean
   diffExplicit: boolean
+  color: "auto" | "always" | "never"
   removeSideEffectImports: boolean
   json: boolean
   help: boolean
@@ -42,7 +43,7 @@ export interface CliIo {
   cwd: string
   env?: NodeJS.ProcessEnv
   stdin?: NodeJS.ReadableStream
-  stdout: { write(value: string): unknown }
+  stdout: { write(value: string): unknown; isTTY?: boolean }
   stderr: { write(value: string): unknown }
 }
 
@@ -75,6 +76,8 @@ Options:
       --strict         Exit 2 when any warning is emitted
       --diff           Print unified diffs (default in dry-run mode)
       --no-diff        Hide unified diffs (default with --write or --json)
+      --color[=when]   Colorize diffs: auto (default), always, or never
+      --no-color       Disable colored diff output
       --json           Print machine-readable report (disables the diff)
       --ignore <name>  Extra directory name to skip; repeatable
       --comment-policy <report|preserve|discard>
@@ -276,6 +279,7 @@ function parseArguments(args: string[]): CliArguments {
     check: false,
     diff: true,
     diffExplicit: false,
+    color: "auto",
     removeSideEffectImports: false,
     json: false,
     help: false,
@@ -309,6 +313,15 @@ function parseArguments(args: string[]): CliArguments {
     } else if (argument === "--no-diff") {
       result.diff = false
       result.diffExplicit = true
+    }
+    else if (argument === "--no-color") result.color = "never"
+    else if (argument === "--color") result.color = "always"
+    else if (argument.startsWith("--color=")) {
+      const value = argument.slice("--color=".length)
+      if (value !== "auto" && value !== "always" && value !== "never") {
+        throw new Error("--color must be auto, always, or never")
+      }
+      result.color = value
     }
     else if (argument === "--json") result.json = true
     else if (argument === "--remove-side-effect-imports") result.removeSideEffectImports = true
@@ -493,6 +506,40 @@ async function atomicWrite(path: string, contents: string): Promise<void> {
   }
 }
 
+const ANSI = {
+  reset: "\u001B[0m",
+  bold: "\u001B[1m",
+  dim: "\u001B[2m",
+  red: "\u001B[31m",
+  green: "\u001B[32m",
+  cyan: "\u001B[36m",
+}
+
+/** Decide whether to emit ANSI color, honoring NO_COLOR, FORCE_COLOR, and TTY state. */
+function shouldUseColor(mode: "auto" | "always" | "never", io: CliIo): boolean {
+  if (mode === "always") return true
+  if (mode === "never") return false
+  const env = io.env ?? process.env
+  if (typeof env.NO_COLOR === "string" && env.NO_COLOR !== "") return false
+  if (typeof env.FORCE_COLOR === "string" && env.FORCE_COLOR !== "" && env.FORCE_COLOR !== "0") return true
+  return io.stdout.isTTY === true
+}
+
+/** Add ANSI colors to a unified diff without changing its line structure. */
+function colorizePatch(patch: string): string {
+  return patch
+    .split("\n")
+    .map((line) => {
+      if (line.startsWith("+++") || line.startsWith("---")) return `${ANSI.bold}${line}${ANSI.reset}`
+      if (line.startsWith("@@")) return `${ANSI.cyan}${line}${ANSI.reset}`
+      if (line.startsWith("+")) return `${ANSI.green}${line}${ANSI.reset}`
+      if (line.startsWith("-")) return `${ANSI.red}${line}${ANSI.reset}`
+      if (line.startsWith("=")) return `${ANSI.dim}${line}${ANSI.reset}`
+      return line
+    })
+    .join("\n")
+}
+
 function aggregateReports(results: FileResult[]): Omit<TransformReport, "filename"> & { filesChanged: number } {
   const report = {
     filesChanged: results.filter((result) => result.changed).length,
@@ -613,10 +660,12 @@ export async function runCli(
     }
 
     if (parsed.diff) {
+      const useColor = shouldUseColor(parsed.color, io)
       for (const result of results) {
         if (!result.changed) continue
         const label = relative(io.cwd, result.path).replaceAll("\\", "/")
-        io.stdout.write(createTwoFilesPatch(`a/${label}`, `b/${label}`, result.source, result.code, "before", "after"))
+        const patch = createTwoFilesPatch(`a/${label}`, `b/${label}`, result.source, result.code, "before", "after")
+        io.stdout.write(useColor ? colorizePatch(patch) : patch)
       }
     }
     if (parsed.json) {
@@ -660,7 +709,7 @@ if (isEntryPoint) {
     cwd: process.cwd(),
     env: process.env,
     stdin: process.stdin,
-    stdout: { write: (value) => writeSync(1, value) },
+    stdout: { write: (value) => writeSync(1, value), isTTY: process.stdout.isTTY },
     stderr: { write: (value) => writeSync(2, value) },
   })
 }

@@ -23,6 +23,8 @@ npx flag-prune --set 'useFlag("new-ui")=false' src packages/app
 | `--strict`                                     | Exit `2` when any warning is emitted.                                                |
 | `--diff`                                       | Print unified diffs. Default in dry-run mode.                                        |
 | `--no-diff`                                    | Hide unified diffs. Default with `--write` or `--json`.                              |
+| `--color[=when]`                               | Colorize diffs: `auto` (default), `always`, or `never`.                              |
+| `--no-color`                                   | Disable colored diff output. Same as `--color=never`.                                |
 | `--json`                                       | Print a machine-readable aggregate and per-file report. Disables diff output.        |
 | `--ignore <name>`                              | Skip an additional directory name. Repeatable.                                       |
 | `--comment-policy <report\|preserve\|discard>` | Choose how comments in removed code are handled. Default: `report`.                  |
@@ -140,6 +142,11 @@ The default summary reports:
 ### Unified diff
 
 Use `--diff` or rely on the dry-run default.
+
+Diffs are colorized when output is written to a terminal. Color follows the
+`NO_COLOR` and `FORCE_COLOR` environment conventions and can be forced with
+`--color=always` or disabled with `--no-color` (or `--color=never`), which is
+useful when capturing output to a file or a pull-request comment.
 
 ### JSON
 
