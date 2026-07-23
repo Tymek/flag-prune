@@ -1,108 +1,133 @@
-# `flag-prune`
+# 🧹 flag-prune
 
-A JS/TS(X) codemod for removing feature flags. Replace configured flag reads with their known values, fold expressions to a fixed point, remove dead control flow, all while preserving required evaluation and side effects.
+**Remove feature flags from JavaScript and TypeScript without turning cleanup into a manual refactor.**
 
-## Run without installing
+`flag-prune` is a safe, deterministic codemod for JS, JSX, TS, and TSX. Give it the final value of a flag and it replaces matching reads, folds expressions to a fixed point, removes dead control flow, and cleans up bindings and imports while preserving required runtime evaluation.
 
-Run in interactive mode:
+```diff
+- const enabled = useFlag("new-feature")
+- if (enabled) {
+-   showFeature()
+- } else {
+-   legacyFeature()
+- }
++ showFeature()
+```
+
+```sh
+npx flag-prune --flag 'useFlag("new-feature")=true' .
+```
+
+## Quick start
+
+### Interactive mode
+
+Run without arguments to answer three prompts, preview the result, and optionally write it:
 
 ```sh
 npx flag-prune
 ```
 
-Run `npx flag-prune --help` to see every option.
+### Explicit mode
 
-## Function and method calls
-
-Calls use their exact source shape. Quote the rule so the shell does not interpret parentheses:
+Preview a migration. Dry-run mode is the default, so the first run prints a diff without changing files:
 
 ```sh
 npx flag-prune --flag 'useFlag("new-access")=false' src
-npx flag-prune --flag 'client.isEnabled("new-access")' --write src
 ```
 
-Matching is provider-agnostic: any static dotted function name works. Configured arguments are an exact required prefix and must be string, number, boolean, or `null` literals. Additional caller arguments are allowed, so `client.isEnabled("new-access", context)` matches the second rule. Their evaluation and side effects are preserved. Dynamic keys stay untouched.
-
-## Non-boolean values
-
-Flags are not limited to booleans. A rule value may be a string, number, or `null`, which lets variant and tier flags resolve through comparisons:
+Write the reviewed changes:
 
 ```sh
+npx flag-prune --flag 'useFlag("new-access")=false' --write src
+```
+
+Then run your project's typecheck, lint, and tests.
+
+## But why?
+
+**Feature-flag removal should be mechanical.**
+
+A general-purpose coding AI agent can coordinate a migration, but the repetitive transformation is better handled by a deterministic tool. The same input and rules should produce the same output. This makes large cleanups faster, more predictable, and much less expensive than burning through LLM tokens or reviewer time.
+
+`flag-prune` is provider-agnostic. It can match hooks, functions, client methods, imported constants, global members, and variant values without knowing which feature-flag SDK produced them.
+
+Excellent projects of [Fallow](https://fallow.dev/), [Knip](https://knip.dev/), and countless predecessors do a great job of removing unused code, but are focused on dead files and imports rather than evaluation. Use them after a `flag-prune` pass.
+
+### Acknowledgments
+
+This project was inspired by:
+- years of work on feature management platform [Unleash](https://www.getunleash.io/)
+- a tool by Uber [PolyglotPiranha](https://github.com/uber/piranha/blob/master/POLYGLOT_README.md)
+
+## Common rules
+
+Repeat `--flag` to remove related flags in one pass.
+
+```sh
+# Local or global member
+npx flag-prune --flag 'features.newCheckout=false' src
+
+# Imported constant; aliases are resolved
+npx flag-prune --flag './flags#NEW_CHECKOUT=false' src
+
+# Function or method call with an exact argument prefix
+npx flag-prune --flag 'useFlag("new-checkout")=false' src
+npx flag-prune --flag 'client.isEnabled("new-checkout")=false' src
+
+# String, number, and null values
 npx flag-prune --flag 'getVariant("checkout")=treatment' src
 npx flag-prune --flag 'limits.maxSeats=25' src
+npx flag-prune --flag 'readOverride()=null' src
+
+# Environment variables
+npx flag-prune --flag 'process.env.FEATURE_FLAG=true' src
 ```
 
-Given `getVariant("checkout") = "treatment"`, an expression like `variant === "treatment"` folds to `true` and its branch is selected. Numeric and string comparisons (`===`, `!==`, `<`, `<=`, `>`, `>=`) and `??` around resolved values fold too, so `config.featureToggles.newList ?? false` collapses.
+Configured call arguments must be static string, number, boolean, or `null` literals. Additional arguments at the call site are allowed, and any required evaluation is preserved.
 
-Assigned results are propagated safely. For example:
+See [Flag rules](docs/flag-rules.md) for the complete syntax and matching model.
 
-```ts
-const enabled = useFlag("new-access")
-if (enabled) {
-  showNewAccess()
-} else {
-  showLegacyAccess()
-}
-```
+## What can it do?
 
-With `'useFlag("new-access")=false'`, this becomes `showLegacyAccess();`; the now-unused `enabled` binding is removed. Imported functions are matched through aliases and local shadowing is not changed.
+- Boolean branches, ternaries, logical expressions, nullish coalescing, and selected loops.
+- String and numeric comparisons such as `===`, `!==`, `<`, `<=`, `>`, and `>=`.
+- Stable local bindings assigned from a configured flag read.
+- JSX conditions and boolean attributes.
+- Unreachable statements after `return`, `throw`, `break`, and `continue` where removal is safe.
+- Imports and bindings made unused by the migration.
 
-Repeat `--flag` for related flags.
+### Safety and limitations
 
-## CLI reference
+- Unknown values and dynamic flag keys stay untouched. Calls with non-static arguments are not matched.
+- Unused files, unused exports, or unused imports that are still referenced by other code are not removed. Use a linter or dead-code tool for that.
+- The transform does not discard required `await`, `yield`, or other side effects. Calls, getters, computed keys, spreads, and other observable evaluation are preserved.
+- Lexical scope and protects important comments are protected.
 
-Common options (`--help` lists them all):
+See [Safety guarantees](docs/safety.md) for the detailed rules and opt-outs.
 
-| Option | Effect |
-| --- | --- |
-| `-f, --flag <rule>` | Flag rule; repeatable; also `-f=RULE` |
-| `-w, --write` / `--dry-run` | Write atomically / preview only (default) |
-| `--check` | Exit 1 when files would change |
-| `--strict` | Exit 2 when any warning is emitted |
-| `--json` / `--diff` / `--no-diff` | Report format |
-| `--ignore <name>` | Extra directory name to skip; repeatable |
-| `--comment-policy <report\|preserve\|discard>` | Handling of comments on removed code |
-| `--no-remove-unused-imports` | Keep imports after their flag binding is removed |
-| `--skip-effectful-conditions` | Leave constant conditions whose test has effects |
+## CI
 
-Exit codes: `0` success, `1` `--check` found changes, `2` usage/processing
-error (also `--strict` warnings or non-convergence). `.d.ts` files are skipped,
-and nested symlinks are skipped with a warning.
+Use `--json` for structured output and `--strict` to turn warnings into exit code `2`.
 
-Use `--check` in CI to fail when changes remain and `--json` for machine-readable reports.
+See [CI and automation](docs/ci.md) for a GitHub Actions example and exit-code guidance.
 
-## Library API
+## Documentation
 
-```ts
-import { transform } from "flag-prune"
+| Page                                       | Use it for                                             |
+| ------------------------------------------ | ------------------------------------------------------ |
+| [Documentation overview](docs/README.md)   | Choose the right guide or reference page               |
+| [Getting started](docs/getting-started.md) | Run a first migration safely                           |
+| [Flag rules](docs/flag-rules.md)           | Define exact member, import, and call matches          |
+| [Recipes](docs/recipes.md)                 | Copy focused examples for common flag shapes           |
+| [CLI reference](docs/cli.md)               | Review options, file discovery, output, and exit codes |
+| [CI and automation](docs/ci.md)            | Add checks and machine-readable reporting              |
+| [Library API](docs/library-api.md)         | Call the transform from JavaScript or TypeScript       |
+| [Safety guarantees](docs/safety.md)        | Understand preservation and conservative behavior      |
+| [Troubleshooting](docs/troubleshooting.md) | Diagnose unmatched rules, warnings, and parse failures |
 
-const result = transform(source, {
-  filename: "access.ts",
-  flags: [
-    {
-      identifier: "hasFeature",
-      path: ["newAccessControl"],
-      value: true,
-    },
-  ],
-})
+## Requirements
 
-console.log(result.code)
-console.log(result.report)
-```
-
-Module-backed definitions match the exact import binding, including aliases, and never match shadowing declarations. Global/identifier definitions bind to the program-level declaration when one exists; otherwise they match only unresolved references. Static calls support dotted callees and exact primitive argument prefixes. Replacement values default to `true` and may also be a string, number, or `null`. Optional access (`a?.b`, `call?.("k")`) is matched by the same rule as the plain form.
-
-## Safety rules
-
-- Unknown values are retained in value context. `const value = load() || true` stays unchanged.
-- Constant boolean conditions still collapse safely. `if (load() || true) run()` becomes `load(); run()`.
-- Short-circuited calls remain unexecuted. `true || load()` becomes `true`.
-- Boolean identities requiring a boolean type apply only to literals, boolean annotations, or stable boolean initializers.
-- Getter, proxy, assignment, `await`, `yield`, and call effects are not discarded.
-- Blocks with lexical declarations keep their braces.
-- Dead ordinary comments are reported. TODO, FIXME, license, copyright, and preserve directives survive.
-- Removing the final configured import binding leaves `import "module"` to preserve module initialization. Set `removeSideEffectImports` only for a proven side-effect-free module.
-- Output is reparsed and every fixture is expected to be idempotent.
-
-Set `simplifyEffectfulConditions` to `false` (CLI: `--skip-effectful-conditions`) to leave constant conditions whose test still requires runtime evaluation. The tool never discards those effects.
+- Node.js 22 or newer.
+- Supported source files: `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, and `.cts`.
+- Type declaration files such as `.d.ts` are skipped.

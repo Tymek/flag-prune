@@ -69,6 +69,30 @@ const f = true || value`)
     expect(result.report.passes).toBeGreaterThan(1)
   })
 
+  it("narrows a conditional value to a numeric literal at a fixed point", () => {
+    const result = run("const result = !(!A || (B && true)) ? 3 : 2", [
+      { identifier: "A", value: false },
+      { identifier: "B", value: false },
+    ])
+    expect(result.code).toBe("const result = 2\n")
+    expect(result.report.passes).toBeGreaterThan(1)
+  })
+
+  it("eliminates newly dead branches at a fixed point", () => {
+    const result = run(
+      "if (A) three(); else if (!(!B || (C && true))) two(); else one();",
+      [
+        { identifier: "A", value: false },
+        { identifier: "B", value: true },
+        { identifier: "C", value: false },
+      ],
+    )
+    expect(result.code).toBe("two();\n")
+    expect(result.code).not.toContain("three")
+    expect(result.code).not.toContain("one")
+    expect(result.report.passes).toBeGreaterThan(1)
+  })
+
   it("covers stable boolean identities, idempotence, and complements", () => {
     const result = run(`declare const x: boolean
 const a = x && true

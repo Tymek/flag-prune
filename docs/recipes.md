@@ -1,0 +1,214 @@
+# Recipes
+
+These examples are provider-agnostic. Replace the selectors and paths with the exact shapes used in your codebase.
+
+## Remove a hook flag
+
+Source:
+
+```tsx
+const enabled = useFlag("new-checkout");
+
+return enabled ? <NewCheckout /> : <CurrentCheckout />
+```
+
+Command:
+
+```sh
+npx flag-prune --flag 'useFlag("new-checkout")=false' --write src
+```
+
+Result:
+
+```tsx
+return <CurrentCheckout />
+```
+
+## Remove a client method flag
+
+Source:
+
+```ts
+if (client.isEnabled("new-checkout", loadContext())) {
+  startNewCheckout()
+} else {
+  startCurrentCheckout()
+}
+```
+
+Command:
+
+```sh
+npx flag-prune \
+  --flag 'client.isEnabled("new-checkout")=true' \
+  --write \
+  src
+```
+
+Result:
+
+```ts
+loadContext()
+startNewCheckout()
+```
+
+The required `loadContext()` evaluation remains even though its result is no longer needed.
+
+## Remove an imported constant
+
+Source:
+
+```ts
+import { NEW_CHECKOUT as enabled, metadata } from "./flags";
+
+if (enabled) {
+  startNewCheckout()
+} else {
+  startCurrentCheckout()
+}
+
+metadata()
+```
+
+Command:
+
+```sh
+npx flag-prune --flag './flags#NEW_CHECKOUT=false' --write src
+```
+
+Result:
+
+```ts
+import { metadata } from "./flags"
+
+startCurrentCheckout()
+metadata()
+```
+
+If the configured binding is the final import specifier, `flag-prune` leaves a side-effect import by default:
+
+```ts
+import "./flags"
+```
+
+Only use `--remove-side-effect-imports` when the module is proven side-effect-free.
+
+## Resolve a string variant
+
+Source:
+
+```ts
+const variant = getVariant("checkout")
+
+if (variant === "treatment") {
+  showTreatment()
+} else {
+  showControl()
+}
+```
+
+Command:
+
+```sh
+npx flag-prune \
+  --flag 'getVariant("checkout")=treatment' \
+  --write \
+  src
+```
+
+Result:
+
+```ts
+showTreatment()
+```
+
+## Resolve a numeric limit
+
+Source:
+
+```ts
+if (limits.maxSeats >= 10) {
+  showEnterpriseControls()
+} else {
+  showStarterControls()
+}
+```
+
+Command:
+
+```sh
+npx flag-prune --flag 'limits.maxSeats=25' --write src
+```
+
+Result:
+
+```ts
+showEnterpriseControls()
+```
+
+## Resolve a nullable override
+
+Source:
+
+```ts
+const theme = readThemeOverride() ?? defaultTheme
+```
+
+Command:
+
+```sh
+npx flag-prune --flag 'readThemeOverride()=null' --write src
+```
+
+Result:
+
+```ts
+const theme = defaultTheme
+```
+
+## Remove several flags in one migration
+
+```sh
+npx flag-prune \
+  --flag 'useFlag("new-checkout")=false' \
+  --flag 'getVariant("checkout-copy")=control' \
+  --flag './flags#SHOW_CHECKOUT_BADGE=false' \
+  --write \
+  src
+```
+
+Related rules are simplified together, which can remove branches that depend on combinations such as `A && B`.
+
+## Preview a pull-request migration
+
+```sh
+npx flag-prune \
+  --flag 'useFlag("new-checkout")=false' \
+  --diff \
+  src
+```
+
+Dry-run and diff output are already the defaults, but spelling them out can make a saved migration command easier to understand.
+
+## Check that cleanup has been applied
+
+```sh
+npx flag-prune \
+  --flag 'useFlag("new-checkout")=false' \
+  --check \
+  --no-diff \
+  src
+```
+
+Exit code `1` means files would change. This is useful while a cleanup branch is being prepared or when enforcing a known final value in CI.
+
+## Produce JSON for an agent or script
+
+```sh
+npx flag-prune \
+  --flag 'useFlag("new-checkout")=false' \
+  --json \
+  src > flag-prune-report.json
+```
+
+The JSON includes an aggregate report and a per-file report.
