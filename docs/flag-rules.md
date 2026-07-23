@@ -26,13 +26,13 @@ Quote call rules in your shell so parentheses and spaces are not interpreted.
 Match a program-level or unresolved identifier:
 
 ```sh
-npx flag-prune --flag 'NEW_CHECKOUT=false' src
+npx flag-prune --set 'NEW_CHECKOUT=false' src
 ```
 
 Match a static member path:
 
 ```sh
-npx flag-prune --flag 'features.checkout.newUi=false' src
+npx flag-prune --set 'features.checkout.newUi=false' src
 ```
 
 This matches static dot access and equivalent optional access:
@@ -59,7 +59,7 @@ features["checkout"].newUi
 Use the exact module specifier, `#`, and the imported export name:
 
 ```sh
-npx flag-prune --flag './flags#NEW_CHECKOUT=false' src
+npx flag-prune --set './flags#NEW_CHECKOUT=false' src
 ```
 
 Given:
@@ -95,10 +95,13 @@ Default imports use `default` as the export name in the library definition:
 
 ## Calls
 
+For SDK examples, see the [Unleash, LaunchDarkly, PostHog, Statsig, and
+OpenFeature guides](guides/providers/README.md).
+
 Calls match an exact static callee and an exact required argument prefix:
 
 ```sh
-npx flag-prune --flag 'client.isEnabled("new-ui")=false' src
+npx flag-prune --set 'client.isEnabled("new-ui")=false' src
 ```
 
 This matches:
@@ -120,14 +123,14 @@ client.isEnabled(flagName)
 Configured arguments can be strings, numbers, booleans, negative numbers, or `null`:
 
 ```sh
-npx flag-prune --flag 'resolveExperiment("checkout", 2, true, null)=treatment' src
+npx flag-prune --set 'resolveExperiment("checkout", 2, true, null)=treatment' src
 ```
 
 Dynamic configured arguments are rejected because they would make matching ambiguous:
 
 ```sh
 # Invalid
-npx flag-prune --flag 'useFlag(flagName)=false' src
+npx flag-prune --set 'useFlag(flagName)=false' src
 ```
 
 ### Additional caller arguments
@@ -154,7 +157,7 @@ Pure trailing values can disappear. Calls, getters, computed keys, spreads, and 
 Limit a call rule to one imported binding by adding the module specifier:
 
 ```sh
-npx flag-prune --flag 'flag-client#useFlag("new-ui")=false' src
+npx flag-prune --set 'flag-client#useFlag("new-ui")=false' src
 ```
 
 Aliases are resolved, and shadowed functions are not matched.
@@ -175,13 +178,13 @@ Supported values are:
 Unquoted tokens that are not booleans, numbers, or `null` are strings:
 
 ```sh
-npx flag-prune --flag 'getVariant("checkout")=treatment' src
+npx flag-prune --set 'getVariant("checkout")=treatment' src
 ```
 
 Quote a string value when it contains spaces or shell-sensitive characters:
 
 ```sh
-npx flag-prune --flag 'getVariant("checkout")="new treatment"' src
+npx flag-prune --set 'getVariant("checkout")="new treatment"' src
 ```
 
 ## Matching is exact and scope-aware
@@ -199,18 +202,18 @@ These constraints are what make the transform repeatable and conservative.
 
 ## Multiple rules
 
-Repeat `--flag`:
+Repeat `--set`:
 
 ```sh
 npx flag-prune \
-  --flag 'A=true' \
-  --flag 'B=false' \
-  --flag 'getVariant("checkout")=control' \
+  --set 'A=true' \
+  --set 'B=false' \
+  --set 'getVariant("checkout")=control' \
   src
 ```
 
 Use `--` before a target whose name begins with `-`:
 
 ```sh
-npx flag-prune --flag 'FLAG=false' -- --generated.ts
+npx flag-prune --set 'FLAG=false' -- --generated.ts
 ```

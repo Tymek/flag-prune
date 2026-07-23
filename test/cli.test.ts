@@ -153,7 +153,7 @@ describe("flag-prune process", () => {
 
   it("prints a dry-run diff without changing files", async () => {
     const cwd = await fixture()
-    const result = await invoke(["--flag", "FLAG", "input.ts"], cwd)
+    const result = await invoke(["--set", "FLAG", "input.ts"], cwd)
     expect(result.code).toBe(0)
     expect(result.stdout).toContain("--- a/input.ts\tbefore")
     expect(result.stdout).toContain("1 flag replaced")
@@ -163,8 +163,8 @@ describe("flag-prune process", () => {
 
   it("writes atomically and becomes a no-op on the second run", async () => {
     const cwd = await fixture()
-    const first = await invoke(["--flag", "FLAG", "--write", "--no-diff", "input.ts"], cwd)
-    const second = await invoke(["--flag", "FLAG", "--write", "--no-diff", "input.ts"], cwd)
+    const first = await invoke(["--set", "FLAG", "--write", "--no-diff", "input.ts"], cwd)
+    const second = await invoke(["--set", "FLAG", "--write", "--no-diff", "input.ts"], cwd)
     expect(first.code).toBe(0)
     expect(first.stdout).toContain("1 file changed")
     expect(first.stdout).toContain("Next: run your project's typecheck, lint, and tests.")
@@ -174,7 +174,7 @@ describe("flag-prune process", () => {
 
   it("supports CI check and JSON reports", async () => {
     const cwd = await fixture()
-    const result = await invoke(["--flag", "FLAG", "--check", "--json", "input.ts"], cwd)
+    const result = await invoke(["--set", "FLAG", "--check", "--json", "input.ts"], cwd)
     expect(result.code).toBe(1)
     const output = JSON.parse(result.stdout) as { report: { filesChanged: number; flagsReplaced: number } }
     expect(output.report).toMatchObject({ filesChanged: 1, flagsReplaced: 1 })
@@ -192,7 +192,7 @@ describe("flag-prune process", () => {
       join(cwd, "input.ts"),
       "if (hasFeature.newAccess) yes(); else no();\n",
     )
-    const result = await invoke(["--flag", "hasFeature.newAccess=true", "--write", "input.ts"], cwd)
+    const result = await invoke(["--set", "hasFeature.newAccess=true", "--write", "input.ts"], cwd)
     expect(result.code).toBe(0)
     expect(result.stdout).not.toContain("--- a/input.ts")
     expect(result.stderr).toBe("")
@@ -206,7 +206,7 @@ describe("flag-prune process", () => {
       "if (process.env.FEATURE_FLAG) yes(); else no();\n",
     )
     const preview = await invoke(
-      ["--flag", "process.env.FEATURE_FLAG=true", "input.ts"],
+      ["--set", "process.env.FEATURE_FLAG=true", "input.ts"],
       cwd,
     )
     expect(preview).toMatchObject({ code: 0, stderr: "" })
@@ -214,7 +214,7 @@ describe("flag-prune process", () => {
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toContain("process.env.FEATURE_FLAG")
 
     const result = await invoke(
-      ["--flag", "process.env.FEATURE_FLAG=true", "--write", "input.ts"],
+      ["--set", "process.env.FEATURE_FLAG=true", "--write", "input.ts"],
       cwd,
     )
     expect(result).toMatchObject({ code: 0, stderr: "" })
@@ -227,7 +227,7 @@ describe("flag-prune process", () => {
       join(cwd, "input.ts"),
       'const x = useFlag("new-ui")\nif (x) yes(); else no();\n',
     )
-    const result = await invoke(["--flag", 'useFlag("new-ui")=false', "--write", "input.ts"], cwd)
+    const result = await invoke(["--set", 'useFlag("new-ui")=false', "--write", "input.ts"], cwd)
     expect(result).toMatchObject({ code: 0, stderr: "" })
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("no();\n")
   })
@@ -238,7 +238,7 @@ describe("flag-prune process", () => {
       join(cwd, "input.ts"),
       'function render(context: object) { const x = useFlag("new-ui", context); if (x) yes(); else no() }\n',
     )
-    const result = await invoke(["--flag", 'useFlag("new-ui")', "--write", "input.ts"], cwd)
+    const result = await invoke(["--set", 'useFlag("new-ui")', "--write", "input.ts"], cwd)
     expect(result).toMatchObject({ code: 0, stderr: "" })
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe(
       "function render(context: object) {\n  yes();\n}\n",
@@ -248,7 +248,7 @@ describe("flag-prune process", () => {
   it("defaults an omitted member value to true", async () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "input.ts"), "if (hasFeature.newUi) yes(); else no();\n")
-    const result = await invoke(["--flag", "hasFeature.newUi", "--write", "input.ts"], cwd)
+    const result = await invoke(["--set", "hasFeature.newUi", "--write", "input.ts"], cwd)
     expect(result.code).toBe(0)
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
   })
@@ -257,7 +257,7 @@ describe("flag-prune process", () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "input.ts"), 'if (flags.enabled("new-ui", -1, null)) yes(); else no();\n')
     const result = await invoke([
-      "--flag",
+      "--set",
       'flags.enabled("new-ui", -1, null)=true',
       "--write",
       "input.ts",
@@ -270,7 +270,7 @@ describe("flag-prune process", () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "input.ts"), 'if (useFlag("release#1?.ready")) yes(); else no();\n')
     const result = await invoke([
-      "--flag",
+      "--set",
       'useFlag("release#1?.ready")=false',
       "--write",
       "input.ts",
@@ -280,7 +280,7 @@ describe("flag-prune process", () => {
   })
 
   it("rejects dynamic call arguments", async () => {
-    const result = await invoke(["--flag", "useFlag(key)=true", "input.ts"])
+    const result = await invoke(["--set", "useFlag(key)=true", "input.ts"])
     expect(result.code).toBe(2)
     expect(result.stderr).toContain("arguments must be static JSON primitives")
   })
@@ -288,7 +288,7 @@ describe("flag-prune process", () => {
   it("supports an import-backed direct flag selector", async () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "input.ts"), 'import { FLAG } from "./flags"; if (FLAG) yes(); else no();\n')
-    const result = await invoke(["--flag", "./flags#FLAG=false", "--write", "input.ts"], cwd)
+    const result = await invoke(["--set", "./flags#FLAG=false", "--write", "input.ts"], cwd)
     expect(result.code).toBe(0)
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe('import "./flags";\nno();\n')
   })
@@ -297,7 +297,7 @@ describe("flag-prune process", () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "input.ts"), 'import { FLAG } from "./flags"; if (FLAG) yes(); else no();\n')
     const result = await invoke(
-      ["--flag", "./flags#FLAG=true", "--remove-side-effect-imports", "--write", "input.ts"],
+      ["--set", "./flags#FLAG=true", "--remove-side-effect-imports", "--write", "input.ts"],
       cwd,
     )
     expect(result.code).toBe(0)
@@ -307,7 +307,7 @@ describe("flag-prune process", () => {
   it("supports equals syntax and repeated direct flags", async () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "input.ts"), "if (A && B) yes(); else no();\n")
-    const result = await invoke(["--flag=A=true", "--flag=B=false", "--write", "input.ts"], cwd)
+    const result = await invoke(["--set=A=true", "--set=B=false", "--write", "input.ts"], cwd)
     expect(result.code).toBe(0)
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("no();\n")
     expect(result.stdout).toContain("2 flags replaced")
@@ -331,7 +331,7 @@ describe("flag-prune process", () => {
     await writeFile(join(cwd, "input.ts"), "work()\n")
     const result = await invoke(["input.ts"], cwd)
     expect(result.code).toBe(2)
-    expect(result.stderr).toContain("use --flag NAME.path[=value]")
+    expect(result.stderr).toContain("use --set NAME.path[=value]")
   })
 
   it("rejects removed config options", async () => {
@@ -344,10 +344,17 @@ describe("flag-prune process", () => {
     expect(short.stderr).toContain("unknown option: -c=flags.json")
   })
 
+  it("rejects the removed --flag option", async () => {
+    const cwd = await fixture()
+    const result = await invoke(["--flag", "FLAG", "input.ts"], cwd)
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain("unknown option: --flag")
+  })
+
   it("skips declaration files", async () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "types.d.ts"), "export declare const FLAG: boolean;\n")
-    const result = await invoke(["--flag", "FLAG", "--write", "types.d.ts"], cwd)
+    const result = await invoke(["--set", "FLAG", "--write", "types.d.ts"], cwd)
     expect(result).toMatchObject({ code: 0 })
     expect(result.stderr).toContain("no files found")
     expect(await readFile(join(cwd, "types.d.ts"), "utf8")).toBe("export declare const FLAG: boolean;\n")
@@ -357,7 +364,7 @@ describe("flag-prune process", () => {
     const cwd = await mkdtemp(join(tmpdir(), "flag-prune-cli-"))
     temporaryDirectories.push(cwd)
     await writeFile(join(cwd, "notes.md"), "# not source\n")
-    const result = await invoke(["--flag", "FLAG", "notes.md"], cwd)
+    const result = await invoke(["--set", "FLAG", "notes.md"], cwd)
     expect(result.code).toBe(0)
     expect(result.stderr).toContain("no files found")
   })
@@ -369,23 +376,23 @@ describe("flag-prune process", () => {
     await mkdir(join(cwd, "vendor"))
     await writeFile(join(cwd, "vendor", "input.ts"), "if (FLAG) yes(); else no();\n")
     await symlink(join(cwd, "input.ts"), join(cwd, "linked.ts"))
-    const result = await invoke(["--flag", "FLAG", "--ignore", "vendor", "--write", "."], cwd)
+    const result = await invoke(["--set", "FLAG", "--ignore", "vendor", "--write", "."], cwd)
     expect(result.code).toBe(0)
     expect(result.stderr).toContain("skipped symlink")
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
     expect(await readFile(join(cwd, "vendor", "input.ts"), "utf8")).toBe("if (FLAG) yes(); else no();\n")
   })
 
-  it("accepts the inline -f= form", async () => {
+  it("accepts the inline -s= form", async () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "input.ts"), "if (hasFeature.newUi) yes(); else no();\n")
-    const result = await invoke(["-f=hasFeature.newUi=true", "--write", "input.ts"], cwd)
+    const result = await invoke(["-s=hasFeature.newUi=true", "--write", "input.ts"], cwd)
     expect(result.code).toBe(0)
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
   })
 
   it("rejects combining --write and --dry-run", async () => {
-    const result = await invoke(["--flag", "FLAG", "--write", "--dry-run", "input.ts"])
+    const result = await invoke(["--set", "FLAG", "--write", "--dry-run", "input.ts"])
     expect(result.code).toBe(2)
     expect(result.stderr).toContain("cannot combine --write and --dry-run")
   })
@@ -393,16 +400,16 @@ describe("flag-prune process", () => {
   it("exposes comment policy through the CLI", async () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "input.ts"), "if (FLAG) {\n  // keep me\n  yes();\n} else no();\n")
-    const result = await invoke(["--flag", "FLAG", "--keep-comments", "--write", "input.ts"], cwd)
+    const result = await invoke(["--set", "FLAG", "--keep-comments", "--write", "input.ts"], cwd)
     expect(result.code).toBe(0)
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toContain("// keep me")
   })
 
   it("validates --comment-policy and --max-passes values", async () => {
-    const policy = await invoke(["--flag", "FLAG", "--comment-policy", "bogus", "input.ts"])
+    const policy = await invoke(["--set", "FLAG", "--comment-policy", "bogus", "input.ts"])
     expect(policy.code).toBe(2)
     expect(policy.stderr).toContain("--comment-policy must be report, preserve, or discard")
-    const passes = await invoke(["--flag", "FLAG", "--max-passes", "0", "input.ts"])
+    const passes = await invoke(["--set", "FLAG", "--max-passes", "0", "input.ts"])
     expect(passes.code).toBe(2)
     expect(passes.stderr).toContain("--max-passes must be a positive integer")
   })
@@ -411,7 +418,7 @@ describe("flag-prune process", () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "input.ts"), 'import { FLAG } from "./flags";\nif (FLAG) yes(); else no();\n')
     const result = await invoke(
-      ["--flag", "./flags#FLAG=true", "--no-remove-unused-imports", "--write", "input.ts"],
+      ["--set", "./flags#FLAG=true", "--no-remove-unused-imports", "--write", "input.ts"],
       cwd,
     )
     expect(result.code).toBe(0)
@@ -420,7 +427,7 @@ describe("flag-prune process", () => {
 
   it("rejects removed external verification options", async () => {
     const cwd = await fixture()
-    const option = await invoke(["--flag", "FLAG", "--typecheck", "input.ts"], cwd)
+    const option = await invoke(["--set", "FLAG", "--typecheck", "input.ts"], cwd)
 
     expect(option.code).toBe(2)
     expect(option.stderr).toContain("unknown option: --typecheck")
@@ -431,7 +438,7 @@ describe("flag-prune process", () => {
     const { lstat, symlink } = await import("node:fs/promises")
     await writeFile(join(cwd, "real.ts"), "if (FLAG) yes(); else no();\n")
     await symlink(join(cwd, "real.ts"), join(cwd, "link.ts"))
-    const result = await invoke(["--flag", "FLAG", "--write", "--no-diff", "link.ts"], cwd)
+    const result = await invoke(["--set", "FLAG", "--write", "--no-diff", "link.ts"], cwd)
     expect(result.code).toBe(0)
     expect((await lstat(join(cwd, "link.ts"))).isSymbolicLink()).toBe(true)
     expect(await readFile(join(cwd, "real.ts"), "utf8")).toBe("yes();\n")
@@ -443,7 +450,7 @@ describe("flag-prune process", () => {
       join(cwd, "input.ts"),
       'function f() {\n  const enabled = useFlag("x")\n  if (enabled) return early()\n  dead()\n}\n',
     )
-    const result = await invoke(["--flag", 'useFlag("x")=true', "input.ts"], cwd)
+    const result = await invoke(["--set", 'useFlag("x")=true', "input.ts"], cwd)
     expect(result.code).toBe(0)
     expect(result.stdout).toContain("1 binding removed")
     expect(result.stdout).toContain("1 unreachable statement removed")
@@ -454,7 +461,7 @@ describe("flag-prune process", () => {
     await writeFile(join(cwd, "input.ts"), "if (FLAG) yes(); else no();\n")
     const { symlink } = await import("node:fs/promises")
     await symlink(join(cwd, "input.ts"), join(cwd, "linked.ts"))
-    const result = await invoke(["--flag", "FLAG", "--strict", "--no-diff", "."], cwd)
+    const result = await invoke(["--set", "FLAG", "--strict", "--no-diff", "."], cwd)
     expect(result.code).toBe(2)
     expect(result.stderr).toContain("skipped symlink")
   })
@@ -465,7 +472,7 @@ describe("flag-prune process", () => {
       join(cwd, "input.ts"),
       'const tier = readTier()\nif (tier === "pro") pro(); else free();\n',
     )
-    const result = await invoke(["--flag", 'readTier()=pro', "--write", "input.ts"], cwd)
+    const result = await invoke(["--set", 'readTier()=pro', "--write", "input.ts"], cwd)
     expect(result).toMatchObject({ code: 0, stderr: "" })
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("pro();\n")
   })
@@ -474,15 +481,15 @@ describe("flag-prune process", () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "good.ts"), "if (FLAG) yes(); else no();\n")
     await writeFile(join(cwd, "broken.ts"), "const x = {\n")
-    const result = await invoke(["--flag", "FLAG", "--write", "--no-diff", "."], cwd)
+    const result = await invoke(["--set", "FLAG", "--write", "--no-diff", "."], cwd)
     expect(result.code).toBe(0)
     expect(result.stderr).toContain("skipped")
     expect(result.stderr).toContain("broken.ts")
     expect(await readFile(join(cwd, "good.ts"), "utf8")).toBe("yes();\n")
     expect(await readFile(join(cwd, "broken.ts"), "utf8")).toBe("const x = {\n")
-    const strict = await invoke(["--flag", "FLAG", "--no-diff", "."], cwd)
+    const strict = await invoke(["--set", "FLAG", "--no-diff", "."], cwd)
     expect(strict.code).toBe(0)
-    const strictFail = await invoke(["--flag", "FLAG", "--strict", "--no-diff", "."], cwd)
+    const strictFail = await invoke(["--set", "FLAG", "--strict", "--no-diff", "."], cwd)
     expect(strictFail.code).toBe(2)
   })
 })

@@ -30,7 +30,7 @@ try {
 
   await writeFile(join(consumer, "input.js"), "if (FLAG) yes(); else no()\n")
   const cli = join(consumer, "node_modules", ".bin", process.platform === "win32" ? "flag-prune.cmd" : "flag-prune")
-  const cliResult = await run(cli, ["--flag", "FLAG=false", "--write", "input.js"], { cwd: consumer })
+  const cliResult = await run(cli, ["--set", "FLAG=false", "--write", "input.js"], { cwd: consumer })
   assert.match(cliResult.stdout, /1 flag replaced/)
   assert.equal(await readFile(join(consumer, "input.js"), "utf8"), "no();\n")
 
@@ -38,7 +38,7 @@ try {
     join(consumer, "call.js"),
     'const enabled = useFlag("new-ui", context)\nif (enabled) yes(); else no();\n',
   )
-  await run(cli, ["--flag", 'useFlag("new-ui")', "--write", "call.js"], { cwd: consumer })
+  await run(cli, ["--set", 'useFlag("new-ui")', "--write", "call.js"], { cwd: consumer })
   assert.equal(await readFile(join(consumer, "call.js"), "utf8"), "context;\nyes();\n")
 } finally {
   await rm(temporary, { recursive: true, force: true })

@@ -9,14 +9,14 @@ flag-prune [options] <file-or-directory...>
 At least one flag rule and one target are required outside guided mode.
 
 ```sh
-npx flag-prune --flag 'useFlag("new-ui")=false' src packages/app
+npx flag-prune --set 'useFlag("new-ui")=false' src packages/app
 ```
 
 ## Options
 
 | Option                                         | Description                                                                          |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `-f, --flag <rule>`                            | Add a flag rule. Repeatable. Also accepts `-f=RULE` and `--flag=RULE`.               |
+| `-s, --set <rule>`                            | Add a flag rule. Repeatable. Also accepts `-s=RULE` and `--set=RULE`.               |
 | `-w, --write`                                  | Write changed files atomically.                                                      |
 | `--dry-run`                                    | Preview only. This is the default and conflicts with `--write`.                      |
 | `--check`                                      | Exit `1` when any file would change.                                                 |
@@ -38,7 +38,7 @@ npx flag-prune --flag 'useFlag("new-ui")=false' src packages/app
 Use `--` to stop option parsing before file targets:
 
 ```sh
-npx flag-prune --flag 'FLAG=false' -- --generated.ts
+npx flag-prune --set 'FLAG=false' -- --generated.ts
 ```
 
 ## Guided mode
@@ -59,8 +59,8 @@ The CLI accepts rules directly. It does not load `flag-prune.config.json` or a `
 
 ```sh
 npx flag-prune \
-  --flag 'features.newUi=false' \
-  --flag 'useFlag("new-navigation")=true' \
+  --set 'features.newUi=false' \
+  --set 'useFlag("new-navigation")=true' \
   src
 ```
 
@@ -89,7 +89,7 @@ Add directory names with `--ignore`:
 
 ```sh
 npx flag-prune \
-  --flag 'FLAG=false' \
+  --set 'FLAG=false' \
   --ignore generated \
   --ignore vendor \
   .
@@ -106,7 +106,7 @@ If no supported files are found, the command prints `flag-prune: no files found`
 Dry-run is the default:
 
 ```sh
-npx flag-prune --flag 'FLAG=false' src
+npx flag-prune --set 'FLAG=false' src
 ```
 
 Changed files are not written. Unified diffs and a human summary are printed unless disabled.
@@ -114,7 +114,7 @@ Changed files are not written. Unified diffs and a human summary are printed unl
 ### Write
 
 ```sh
-npx flag-prune --flag 'FLAG=false' --write src
+npx flag-prune --set 'FLAG=false' --write src
 ```
 
 Changed files are written atomically. Diff output is hidden by default, but can be enabled explicitly with `--diff`.
@@ -144,7 +144,7 @@ Use `--diff` or rely on the dry-run default.
 ### JSON
 
 ```sh
-npx flag-prune --flag 'FLAG=false' --json src
+npx flag-prune --set 'FLAG=false' --json src
 ```
 
 The output shape is:
@@ -189,7 +189,7 @@ The default `report` policy removes ordinary dead comments and includes them in 
 
 ```sh
 npx flag-prune \
-  --flag 'FLAG=false' \
+  --set 'FLAG=false' \
   --comment-policy preserve \
   src
 ```

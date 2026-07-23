@@ -2,6 +2,9 @@
 
 These examples are provider-agnostic. Replace the selectors and paths with the exact shapes used in your codebase.
 
+For Unleash, LaunchDarkly, PostHog, Statsig, and OpenFeature commands, see the
+[feature flag provider guides](guides/providers/README.md).
+
 ## Remove a hook flag
 
 Source:
@@ -15,7 +18,7 @@ return enabled ? <NewCheckout /> : <CurrentCheckout />
 Command:
 
 ```sh
-npx flag-prune --flag 'useFlag("new-checkout")=false' --write src
+npx flag-prune --set 'useFlag("new-checkout")=false' --write src
 ```
 
 Result:
@@ -40,7 +43,7 @@ Command:
 
 ```sh
 npx flag-prune \
-  --flag 'client.isEnabled("new-checkout")=true' \
+  --set 'client.isEnabled("new-checkout")=true' \
   --write \
   src
 ```
@@ -73,7 +76,7 @@ metadata()
 Command:
 
 ```sh
-npx flag-prune --flag './flags#NEW_CHECKOUT=false' --write src
+npx flag-prune --set './flags#NEW_CHECKOUT=false' --write src
 ```
 
 Result:
@@ -111,7 +114,7 @@ Command:
 
 ```sh
 npx flag-prune \
-  --flag 'getVariant("checkout")=treatment' \
+  --set 'getVariant("checkout")=treatment' \
   --write \
   src
 ```
@@ -137,7 +140,7 @@ if (limits.maxSeats >= 10) {
 Command:
 
 ```sh
-npx flag-prune --flag 'limits.maxSeats=25' --write src
+npx flag-prune --set 'limits.maxSeats=25' --write src
 ```
 
 Result:
@@ -157,7 +160,7 @@ const theme = readThemeOverride() ?? defaultTheme
 Command:
 
 ```sh
-npx flag-prune --flag 'readThemeOverride()=null' --write src
+npx flag-prune --set 'readThemeOverride()=null' --write src
 ```
 
 Result:
@@ -170,9 +173,9 @@ const theme = defaultTheme
 
 ```sh
 npx flag-prune \
-  --flag 'useFlag("new-checkout")=false' \
-  --flag 'getVariant("checkout-copy")=control' \
-  --flag './flags#SHOW_CHECKOUT_BADGE=false' \
+  --set 'useFlag("new-checkout")=false' \
+  --set 'getVariant("checkout-copy")=control' \
+  --set './flags#SHOW_CHECKOUT_BADGE=false' \
   --write \
   src
 ```
@@ -183,7 +186,7 @@ Related rules are simplified together, which can remove branches that depend on 
 
 ```sh
 npx flag-prune \
-  --flag 'useFlag("new-checkout")=false' \
+  --set 'useFlag("new-checkout")=false' \
   --diff \
   src
 ```
@@ -194,7 +197,7 @@ Dry-run and diff output are already the defaults, but spelling them out can make
 
 ```sh
 npx flag-prune \
-  --flag 'useFlag("new-checkout")=false' \
+  --set 'useFlag("new-checkout")=false' \
   --check \
   --no-diff \
   src
@@ -206,7 +209,7 @@ Exit code `1` means files would change. This is useful while a cleanup branch is
 
 ```sh
 npx flag-prune \
-  --flag 'useFlag("new-checkout")=false' \
+  --set 'useFlag("new-checkout")=false' \
   --json \
   src > flag-prune-report.json
 ```

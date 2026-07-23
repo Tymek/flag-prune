@@ -52,13 +52,13 @@ Safely replace configured feature flags and remove dead code.
 
 Quick start:
   npx flag-prune
-  npx flag-prune --flag hasFeature.newAccess src
-  npx flag-prune --flag 'useFlag("new-access")=false' --write src
+  npx flag-prune --set hasFeature.newAccess src
+  npx flag-prune --set 'useFlag("new-access")=false' --write src
 
   Run with no options to start a guided setup. After the preview, you can
   choose whether to write the changes. Guided setup is disabled when CI=true.
 
-Flag rule syntax (repeat --flag for multiple rules):
+Flag rule syntax (repeat --set for multiple rules):
   NAME.path[=value]               local/global identifier or member access
   module#EXPORT.path[=value]      imported binding (aliases resolved)
   'CALL("key", 1)[=value]'        approved call; args are an exact prefix
@@ -68,7 +68,7 @@ Flag rule syntax (repeat --flag for multiple rules):
   Use '--' to end options before file targets.
 
 Options:
-  -f, --flag <rule>    Flag rule (also -f=RULE / --flag=RULE)
+  -s, --set <rule>    Flag rule (also -s=RULE / --set=RULE)
   -w, --write          Write changes atomically
       --dry-run        Preview only; never write (default; conflicts with -w)
       --check          Exit 1 when files would change
@@ -108,9 +108,9 @@ function parseStaticArguments(source: string, rule: string): NonNullable<FlagDef
   try {
     expression = parseExpression(`[${source}]`)
   } catch {
-    throw new Error(`invalid --flag call: ${rule}; arguments must be static JSON primitives`)
+    throw new Error(`invalid --set call: ${rule}; arguments must be static JSON primitives`)
   }
-  if (!t.isArrayExpression(expression)) throw new Error(`invalid --flag call: ${rule}`)
+  if (!t.isArrayExpression(expression)) throw new Error(`invalid --set call: ${rule}`)
   return expression.elements.map((element) => {
     if (t.isStringLiteral(element) || t.isNumericLiteral(element) || t.isBooleanLiteral(element)) {
       return element.value
@@ -122,12 +122,12 @@ function parseStaticArguments(source: string, rule: string): NonNullable<FlagDef
       return -element.argument.value
     }
     if (t.isNullLiteral(element)) return null
-    throw new Error(`invalid --flag call: ${rule}; arguments must be static JSON primitives`)
+    throw new Error(`invalid --set call: ${rule}; arguments must be static JSON primitives`)
   })
 }
 
 function parseValueToken(raw: string, rule: string): FlagValue {
-  if (raw.length === 0) throw new Error(`invalid --flag rule: ${rule}; expected a value after '='`)
+  if (raw.length === 0) throw new Error(`invalid --set rule: ${rule}; expected a value after '='`)
   if (raw === "true") return true
   if (raw === "false") return false
   if (raw === "null") return null
@@ -136,7 +136,7 @@ function parseValueToken(raw: string, rule: string): FlagValue {
     try {
       return JSON.parse(raw) as string
     } catch {
-      throw new Error(`invalid --flag rule: ${rule}; malformed quoted value`)
+      throw new Error(`invalid --set rule: ${rule}; malformed quoted value`)
     }
   }
   if (raw.length >= 2 && raw.startsWith("'") && raw.endsWith("'")) return raw.slice(1, -1)
@@ -172,11 +172,11 @@ function parseDirectCall(
   const opening = access.indexOf("(")
   if (opening < 0) return undefined
   if (!access.endsWith(")") || access.indexOf("(", opening + 1) >= 0) {
-    throw new Error(`invalid --flag call: ${rule}`)
+    throw new Error(`invalid --set call: ${rule}`)
   }
   const call = access.slice(0, opening)
   if (!/^[$A-Z_a-z][$\w]*(?:\.[$A-Z_a-z][$\w]*)*$/.test(call)) {
-    throw new Error(`invalid --flag call: ${rule}; expected CALL("key")=true`)
+    throw new Error(`invalid --set call: ${rule}; expected CALL("key")=true`)
   }
   return {
     ...(moduleName === undefined ? {} : { module: moduleName }),
@@ -189,7 +189,7 @@ function parseDirectCall(
 function parseDirectFlag(rule: string): FlagDefinition {
   const { selector: rawSelector, value: flagValue } = splitValue(rule)
   if (rawSelector.length === 0) {
-    throw new Error(`invalid --flag rule: ${rule}; expected NAME.path or CALL("key")`)
+    throw new Error(`invalid --set rule: ${rule}; expected NAME.path or CALL("key")`)
   }
 
   const opening = rawSelector.indexOf("(")
@@ -200,7 +200,7 @@ function parseDirectFlag(rule: string): FlagDefinition {
       : -1
   const moduleName = moduleSeparator < 0 ? undefined : rawSelector.slice(0, moduleSeparator)
   const rawAccess = moduleSeparator < 0 ? rawSelector : rawSelector.slice(moduleSeparator + 1)
-  if (moduleName === "") throw new Error(`invalid --flag selector: ${rawSelector}`)
+  if (moduleName === "") throw new Error(`invalid --set selector: ${rawSelector}`)
   const directCall = parseDirectCall(rawAccess, moduleName, flagValue, rule)
   if (directCall !== undefined) return directCall
   const access = rawAccess.replaceAll("?.", ".")
@@ -209,7 +209,7 @@ function parseDirectFlag(rule: string): FlagDefinition {
     parts.length === 0 ||
     parts.some((part) => !/^[$A-Z_a-z][$\w]*$/.test(part))
   ) {
-    throw new Error(`invalid --flag selector: ${rawSelector}`)
+    throw new Error(`invalid --set selector: ${rawSelector}`)
   }
 
   const [root, ...path] = parts as [string, ...string[]]
@@ -245,13 +245,13 @@ function parseArguments(args: string[]): CliArguments {
       result.targets.push(...args.slice(index + 1))
       break
     }
-    if (argument === "-f" || argument === "--flag") {
+    if (argument === "-s" || argument === "--set") {
       result.directFlags.push(parseDirectFlag(requireValue(args, index, argument)))
       index += 1
-    } else if (argument.startsWith("--flag=")) {
-      result.directFlags.push(parseDirectFlag(argument.slice("--flag=".length)))
-    } else if (argument.startsWith("-f=")) {
-      result.directFlags.push(parseDirectFlag(argument.slice("-f=".length)))
+    } else if (argument.startsWith("--set=")) {
+      result.directFlags.push(parseDirectFlag(argument.slice("--set=".length)))
+    } else if (argument.startsWith("-s=")) {
+      result.directFlags.push(parseDirectFlag(argument.slice("-s=".length)))
     } else if (argument === "-w" || argument === "--write") result.write = true
     else if (argument === "--dry-run") dryRun = true
     else if (argument === "--check") result.check = true
@@ -501,7 +501,7 @@ function createConfig(parsed: CliArguments): FlagCleanConfig {
     flags: parsed.directFlags,
   })
   if (config.flags.length === 0) {
-    throw new Error("no flags provided; use --flag NAME.path[=value]")
+    throw new Error("no flags provided; use --set NAME.path[=value]")
   }
   return config
 }

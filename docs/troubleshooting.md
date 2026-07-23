@@ -9,7 +9,7 @@ Check the rule against the exact source shape.
 Call arguments are exact:
 
 ```sh
---flag 'useFlag("new-ui")=false'
+--set 'useFlag("new-ui")=false'
 ```
 
 matches `useFlag("new-ui")` but not `useFlag("new_ui")`, `useFlag("other")`, or `useFlag(flagName)`.
@@ -70,13 +70,13 @@ Use the exact string from the source import declaration.
 Quote rules containing parentheses, spaces, `#`, or shell-sensitive punctuation:
 
 ```sh
-npx flag-prune --flag 'useFlag("new-ui")=false' src
+npx flag-prune --set 'useFlag("new-ui")=false' src
 ```
 
 For a string value with spaces:
 
 ```sh
-npx flag-prune --flag 'getVariant("checkout")="new treatment"' src
+npx flag-prune --set 'getVariant("checkout")="new treatment"' src
 ```
 
 ## I received "arguments must be static JSON primitives"
@@ -86,23 +86,23 @@ Configured call arguments must be literal strings, numbers, booleans, negative n
 Valid:
 
 ```sh
---flag 'resolveFlag("checkout", 2, true, null)=false'
+--set 'resolveFlag("checkout", 2, true, null)=false'
 ```
 
 Invalid:
 
 ```sh
---flag 'resolveFlag(flagName)=false'
+--set 'resolveFlag(flagName)=false'
 ```
 
 The call site may still contain additional dynamic arguments after the configured prefix.
 
 ## I received "no flags provided"
 
-The CLI accepts direct `--flag` rules and does not load a config file:
+The CLI accepts direct `--set` rules and does not load a config file:
 
 ```sh
-npx flag-prune --flag 'FLAG=false' src
+npx flag-prune --set 'FLAG=false' src
 ```
 
 There is no `--config` option.
@@ -112,7 +112,7 @@ There is no `--config` option.
 Add one or more targets:
 
 ```sh
-npx flag-prune --flag 'FLAG=false' src packages/app
+npx flag-prune --set 'FLAG=false' src packages/app
 ```
 
 ## I received "no files found"
@@ -146,7 +146,7 @@ The CLI processes files independently. If one file cannot be parsed, it reports 
 Run with `--strict` when any skipped file should fail the command:
 
 ```sh
-npx flag-prune --flag 'FLAG=false' --strict src
+npx flag-prune --set 'FLAG=false' --strict src
 ```
 
 Check that the file extension reflects its syntax. In particular, `.ts`, `.mts`, and `.cts` are parsed without JSX, while JSX-capable extensions enable JSX parsing.
@@ -159,7 +159,7 @@ Preserve them:
 
 ```sh
 npx flag-prune \
-  --flag 'FLAG=false' \
+  --set 'FLAG=false' \
   --comment-policy preserve \
   src
 ```
@@ -180,7 +180,7 @@ Remove it only when the module is proven side-effect-free:
 
 ```sh
 npx flag-prune \
-  --flag './flags#FLAG=false' \
+  --set './flags#FLAG=false' \
   --remove-side-effect-imports \
   src
 ```
@@ -204,7 +204,7 @@ Keep the original condition instead:
 
 ```sh
 npx flag-prune \
-  --flag 'FLAG=false' \
+  --set 'FLAG=false' \
   --skip-effectful-conditions \
   src
 ```
@@ -230,7 +230,7 @@ The default pass limit is `20`. Increase it temporarily:
 
 ```sh
 npx flag-prune \
-  --flag 'FLAG=false' \
+  --set 'FLAG=false' \
   --max-passes 40 \
   src
 ```

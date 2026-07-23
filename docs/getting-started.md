@@ -37,7 +37,7 @@ useFlag("new-access")=false
 Run `flag-prune` against a file or directory:
 
 ```sh
-npx flag-prune --flag 'useFlag("new-access")=false' src
+npx flag-prune --set 'useFlag("new-access")=false' src
 ```
 
 Dry-run mode is the default. The command prints a unified diff and a summary without changing files.
@@ -62,7 +62,7 @@ After reviewing the preview, add `--write`:
 
 ```sh
 npx flag-prune \
-  --flag 'useFlag("new-access")=false' \
+  --set 'useFlag("new-access")=false' \
   --write \
   src
 ```
@@ -105,13 +105,13 @@ It then previews the result and asks whether to write it. Guided mode does not r
 
 ## Remove multiple related flags
 
-Repeat `--flag`:
+Repeat `--set`:
 
 ```sh
 npx flag-prune \
-  --flag 'useFlag("new-access")=false' \
-  --flag 'getVariant("access-layout")=legacy' \
-  --flag 'limits.maxAccessGroups=5' \
+  --set 'useFlag("new-access")=false' \
+  --set 'getVariant("access-layout")=legacy' \
+  --set 'limits.maxAccessGroups=5' \
   src
 ```
 
@@ -120,5 +120,6 @@ Applying related final values together lets the simplifier fold expressions that
 ## Next steps
 
 - Learn the complete selector syntax in [Flag rules](flag-rules.md).
+- Find SDK examples in the [feature flag provider guides](guides/providers/README.md).
 - Copy provider-agnostic examples from [Recipes](recipes.md).
 - Add a pull-request check with [CI and automation](ci.md).

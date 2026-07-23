@@ -15,7 +15,7 @@
 ```
 
 ```sh
-npx flag-prune --flag 'useFlag("new-feature")=true' .
+npx flag-prune --set 'useFlag("new-feature")=true' ./
 ```
 
 ## Quick start
@@ -33,13 +33,13 @@ npx flag-prune
 Preview a migration. Dry-run mode is the default, so the first run prints a diff without changing files:
 
 ```sh
-npx flag-prune --flag 'useFlag("new-access")=false' src
+npx flag-prune --set 'useFlag("new-access")=false' ./src
 ```
 
 Write the reviewed changes:
 
 ```sh
-npx flag-prune --flag 'useFlag("new-access")=false' --write src
+npx flag-prune --set 'useFlag("new-access")=false' --write ./src
 ```
 
 Then run your project's typecheck, lint, and tests.
@@ -50,38 +50,39 @@ Then run your project's typecheck, lint, and tests.
 
 A general-purpose coding AI agent can coordinate a migration, but the repetitive transformation is better handled by a deterministic tool. The same input and rules should produce the same output. This makes large cleanups faster, more predictable, and much less expensive than burning through LLM tokens or reviewer time.
 
-`flag-prune` is provider-agnostic. It can match hooks, functions, client methods, imported constants, global members, and variant values without knowing which feature-flag SDK produced them.
+`flag-prune` is provider-agnostic. It can match hooks, functions, client methods, imported constants, global members, and variant values without knowing which feature-flag SDK produced them. See the [feature flag provider guides](docs/guides/providers/README.md) for Unleash, LaunchDarkly, PostHog, Statsig, and OpenFeature examples.
 
 Excellent projects of [Fallow](https://fallow.dev/), [Knip](https://knip.dev/), and countless predecessors do a great job of removing unused code, but are focused on dead files and imports rather than evaluation. Use them after a `flag-prune` pass.
 
 ### Acknowledgments
 
 This project was inspired by:
+
 - years of work on feature management platform [Unleash](https://www.getunleash.io/)
 - a tool by Uber [PolyglotPiranha](https://github.com/uber/piranha/blob/master/POLYGLOT_README.md)
 
 ## Common rules
 
-Repeat `--flag` to remove related flags in one pass.
+Repeat `--set` to remove related flags in one pass.
 
 ```sh
 # Local or global member
-npx flag-prune --flag 'features.newCheckout=false' src
+npx flag-prune --set 'features.newCheckout=false' ./src
 
 # Imported constant; aliases are resolved
-npx flag-prune --flag './flags#NEW_CHECKOUT=false' src
+npx flag-prune --set './flags#NEW_CHECKOUT=false' ./src
 
 # Function or method call with an exact argument prefix
-npx flag-prune --flag 'useFlag("new-checkout")=false' src
-npx flag-prune --flag 'client.isEnabled("new-checkout")=false' src
+npx flag-prune --set 'useFlag("new-checkout")=false' ./src
+npx flag-prune --set 'client.isEnabled("new-checkout")=false' ./src
 
 # String, number, and null values
-npx flag-prune --flag 'getVariant("checkout")=treatment' src
-npx flag-prune --flag 'limits.maxSeats=25' src
-npx flag-prune --flag 'readOverride()=null' src
+npx flag-prune --set 'getVariant("checkout")=treatment' ./src
+npx flag-prune --set 'limits.maxSeats=25' ./src
+npx flag-prune --set 'readOverride()=null' ./src
 
 # Environment variables
-npx flag-prune --flag 'process.env.FEATURE_FLAG=true' src
+npx flag-prune --set 'process.env.FEATURE_FLAG=true' ./src
 ```
 
 Configured call arguments must be static string, number, boolean, or `null` literals. Additional arguments at the call site are allowed, and any required evaluation is preserved.
@@ -114,17 +115,23 @@ See [CI and automation](docs/ci.md) for a GitHub Actions example and exit-code g
 
 ## Documentation
 
-| Page                                       | Use it for                                             |
-| ------------------------------------------ | ------------------------------------------------------ |
-| [Documentation overview](docs/README.md)   | Choose the right guide or reference page               |
-| [Getting started](docs/getting-started.md) | Run a first migration safely                           |
-| [Flag rules](docs/flag-rules.md)           | Define exact member, import, and call matches          |
-| [Recipes](docs/recipes.md)                 | Copy focused examples for common flag shapes           |
-| [CLI reference](docs/cli.md)               | Review options, file discovery, output, and exit codes |
-| [CI and automation](docs/ci.md)            | Add checks and machine-readable reporting              |
-| [Library API](docs/library-api.md)         | Call the transform from JavaScript or TypeScript       |
-| [Safety guarantees](docs/safety.md)        | Understand preservation and conservative behavior      |
-| [Troubleshooting](docs/troubleshooting.md) | Diagnose unmatched rules, warnings, and parse failures |
+AI tools and documentation crawlers can use
+[`docs/llms.txt`](docs/llms.txt) for a quick start and documentation link.
+
+| Page                                               | Use it for                                             |
+| -------------------------------------------------- | ------------------------------------------------------ |
+| [Provider guides](docs/guides/providers/README.md) | Remove flags from popular feature flag providers: [Unleash](docs/guides/providers/unleash.md), [LaunchDarkly](docs/guides/providers/launchdarkly.md), [PostHog](docs/guides/providers/posthog.md), [Statsig](docs/guides/providers/statsig.md), [OpenFeature](docs/guides/providers/openfeature.md).       |
+| [Documentation overview](docs/README.md)           | Choose the right guide or reference page               |
+| [Getting started](docs/getting-started.md)         | Run a first migration safely                           |
+| [Flag rules](docs/flag-rules.md)                   | Define exact member, import, and call matches          |
+| [Recipes](docs/recipes.md)                         | Copy focused examples for common flag shapes           |
+| [CLI reference](docs/cli.md)                       | Review options, file discovery, output, and exit codes |
+| [CI and automation](docs/ci.md)                    | Add checks and machine-readable reporting              |
+| [Library API](docs/library-api.md)                 | Call the transform from JavaScript or TypeScript       |
+| [Safety guarantees](docs/safety.md)                | Understand preservation and conservative behavior      |
+| [Troubleshooting](docs/troubleshooting.md)         | Diagnose unmatched rules, warnings, and parse failures |
+
+
 
 ## Requirements
 

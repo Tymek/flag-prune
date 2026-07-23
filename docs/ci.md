@@ -11,7 +11,7 @@ Use `--check` to return exit code `1` when files would change:
 
 ```sh
 npx flag-prune \
-  --flag 'useFlag("new-access")=false' \
+  --set 'useFlag("new-access")=false' \
   --check \
   --no-diff \
   src
@@ -48,7 +48,7 @@ jobs:
           node-version: 24
       - run: >-
           npx flag-prune
-          --flag 'useFlag("new-access")=false'
+          --set 'useFlag("new-access")=false'
           --check
           --strict
           --no-diff
@@ -63,7 +63,7 @@ Add `--strict` when skipped files, symlinks, transform warnings, or other warnin
 
 ```sh
 npx flag-prune \
-  --flag 'FLAG=false' \
+  --set 'FLAG=false' \
   --check \
   --strict \
   --no-diff \
@@ -78,7 +78,7 @@ Use `--json` for an aggregate report plus one report per processed file:
 
 ```sh
 npx flag-prune \
-  --flag 'useFlag("new-access")=false' \
+  --set 'useFlag("new-access")=false' \
   --json \
   src > flag-prune-report.json
 ```
@@ -87,7 +87,7 @@ JSON mode disables unified diff output. It can be combined with `--check` and `-
 
 ```sh
 npx flag-prune \
-  --flag 'useFlag("new-access")=false' \
+  --set 'useFlag("new-access")=false' \
   --json \
   --check \
   --strict \
@@ -102,7 +102,7 @@ A bot or migration script can run with `--write`:
 
 ```sh
 npx flag-prune \
-  --flag 'useFlag("new-access")=false' \
+  --set 'useFlag("new-access")=false' \
   --write \
   src
 ```
@@ -112,7 +112,7 @@ After writing, run the repository's typecheck, lint, and test commands. `flag-pr
 A typical automated migration sequence is:
 
 ```sh
-npx flag-prune --flag 'useFlag("new-access")=false' --write src
+npx flag-prune --set 'useFlag("new-access")=false' --write src
 pnpm typecheck
 pnpm lint
 pnpm test
@@ -125,7 +125,7 @@ For a coding agent, prefer:
 
 ```sh
 npx flag-prune \
-  --flag 'useFlag("new-access")=false' \
+  --set 'useFlag("new-access")=false' \
   --json \
   src
 ```

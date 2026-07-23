@@ -1,0 +1,23 @@
+# flag-prune
+
+> Remove completed feature flags safely from JavaScript and TypeScript.
+
+## Quick start
+
+Preview a change:
+
+```sh
+npx flag-prune --set 'useFlag("new-checkout")=true' ./src
+```
+
+Review the diff, then write it:
+
+```sh
+npx flag-prune --set 'useFlag("new-checkout")=true' --write ./src
+```
+
+Run your project's typecheck, lint, dead-code elimination, and tests after writing the change.
+
+## Full documentation
+
+- [flag-prune documentation](https://github.com/Tymek/flag-prune/blob/master/docs/README.md)

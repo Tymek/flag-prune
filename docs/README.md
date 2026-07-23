@@ -2,11 +2,14 @@
 
 Replace known feature-flag values and remove the code that can no longer run. Start with a preview, inspect the diff, then write the result.
 
+For AI tools and documentation crawlers, see [`llms.txt`](llms.txt).
+
 ## Start here
 
 | Goal                                                                 | Page                                  |
 | -------------------------------------------------------------------- | ------------------------------------- |
 | Remove one flag for the first time                                   | [Getting started](getting-started.md) |
+| Remove flags from a specific feature flag SDK                        | [Provider guides](guides/providers/README.md) |
 | Express a hook, client method, imported constant, variant, or member | [Flag rules](flag-rules.md)           |
 | Copy a complete command for a common migration                       | [Recipes](recipes.md)                 |
 | Review every command-line option                                     | [CLI reference](cli.md)               |
@@ -38,7 +41,7 @@ if (variant === "treatment") {
 With this rule:
 
 ```sh
---flag 'getVariant("checkout")=treatment'
+--set 'getVariant("checkout")=treatment'
 ```
 
 The result is:
@@ -62,6 +65,7 @@ The now-unused `variant` binding and dead branch are removed as part of the same
 ### Guides
 
 - [Getting started](getting-started.md)
+- [Provider guides](guides/providers/README.md)
 - [Recipes](recipes.md)
 - [CI and automation](ci.md)
 - [Troubleshooting](troubleshooting.md)
