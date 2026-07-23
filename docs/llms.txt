@@ -22,10 +22,10 @@ Run your project's typecheck, lint, dead-code elimination, and tests after writi
 
 flag-prune is the deterministic step in a larger cleanup:
 
-1. flag-prune (dry-run, review, then --write; add --flatten-blocks to de-scope)
+1. flag-prune (dry-run, review, then --write; de-scoping is on by default, pass --no-flatten-blocks to keep blocks)
 2. typecheck, lint, format, test
 3. dead-code removal tool (Knip, Fallow, ts-prune)
-4. optional LLM pass for readability and scoping refactors
+4. optional LLM pass for readability and scoping refactors (do it in a separate commit or PR)
 
 See [Recommended workflow](https://github.com/Tymek/flag-prune/blob/master/docs/workflow.md)
 for the full pipeline, an LLM cleanup prompt, and examples.

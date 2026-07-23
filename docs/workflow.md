@@ -27,52 +27,27 @@ Run these steps in order and commit between them so each diff stays small.
    npx flag-prune --set 'useFlag("new-checkout")=true' --write src
    ```
 
-   Add `--flatten-blocks` when you want it to de-scope the blocks it leaves
-   behind. See [Safety guarantees](safety.md#opt-in-block-de-scoping).
+   By default it also de-scopes the blocks it can safely flatten; pass
+   `--no-flatten-blocks` to keep them. See
+   [Safety guarantees](safety.md#lexical-scope-is-de-scoped-only-when-safe).
 
-2. **Typecheck** - confirm the transform did not break types.
-
-   ```sh
-   tsc --noEmit
-   ```
-
+2. **Typecheck** - confirm the transform did not break types, for example: `tsc --noEmit`
 3. **Lint** - apply autofixes and surface newly dead or unreachable code your
    rules detect.
-
-   ```sh
-   eslint . --fix
-   ```
-
-4. **Format** - normalize whitespace so the mechanical diff is minimal.
-
-   ```sh
-   prettier --write .   # or biome format --write .
-   ```
-
+4. **Format** - normalize whitespace so the mechanical diff is minimal. When
+   `flag-prune` reprints a moved statement it may add a semicolon or switch a
+   quote style; the formatter (Prettier, Biome, or ESLint) normalizes this, so
+   run it before review.
 5. **Test** - run the suite to confirm behavior is unchanged for the flag's
    final value.
-
-   ```sh
-   npm test
-   ```
-
 6. **Dead-code removal** - `flag-prune` intentionally does not delete unused
    files, exports, or imports that are still referenced elsewhere. Run a
-   dedicated tool such as [Knip](https://knip.dev/), [Fallow](https://fallow.dev/),
-   or `ts-prune` to remove what is now unreachable across the project.
-
+   dedicated tool such as [Fallow](https://fallow.dev/) or [Knip](https://knip.dev/)
+   to remove what is now unreachable across the project.
 7. **LLM cleanup pass** - hand the result to an AI agent for the readability and
-   scoping refactors described below.
-
-A convenient one-liner for the deterministic steps:
-
-```sh
-npx flag-prune --set 'useFlag("new-checkout")=true' --write src \
-  && tsc --noEmit \
-  && eslint . --fix \
-  && prettier --write . \
-  && npm test
-```
+   scoping refactors described below. Do this in a **separate commit or pull
+   request** so the deterministic changes stay reviewable on their own and the
+   judgment-based edits can be reviewed independently.
 
 ## The LLM cleanup pass
 
@@ -82,43 +57,47 @@ not yet idiomatic. Typical leftovers:
 
 - A `let` declared for both branches that could now be a single `const`.
 - A value assigned in a removed branch that can be inlined at its use.
-- A block that could be de-scoped if you accept the readability trade-off (or
-  that `--flatten-blocks` left in place because a name check failed).
+- A conditional left trivially nested after a branch was removed.
 
 These are judgment calls, so they are a good fit for an LLM rather than a
 codemod.
 
 ### Example
 
-After `flag-prune` resolves `hasFeature.newAccessControl` to `true` (with
-`--flatten-blocks`), you might have:
+Considering initial code:
 
 ```ts
 export async function getSettings() {
-  let user: Awaited<ReturnType<typeof authenticateAtLeast>>
-  let permissions: AccessPermission[] | undefined
+  let user: Awaited<UserType>
 
-  const access = await authorizeAccess(["organization-settings"])
-  permissions = access.permissions
-  user = await getUserFromSessionOr404()
-
-  return {
-    showArxAdminTools: await canAccessArxAdminTools(user, permissions),
+  if (hasFeature.newAccessControl) {
+    user = await getUser()
+  } else {
+    user = await getLegacyUser()
   }
+  return verifyAccess(user)
+}
+```
+
+After `flag-prune` resolves `hasFeature.newAccessControl` to `true`, you might have:
+
+```ts
+export async function getSettings() {
+  let user: Awaited<UserType>
+  user = await getUser()
+
+  return verifyAccess(user)
 }
 ```
 
 An LLM can finish the cleanup into idiomatic code, which a deterministic tool
-should not attempt automatically:
+will not attempt:
 
 ```ts
 export async function getSettings() {
-  const user = await getUserFromSessionOr404()
-  const permissions = (await authorizeAccess(["organization-settings"])).permissions
+  const user = await getUser()
 
-  return {
-    showArxAdminTools: await canAccessArxAdminTools(user, permissions),
-  }
+  return verifyAccess(user)
 }
 ```
 
@@ -128,28 +107,9 @@ Give the agent the changed files and a clear, bounded instruction. A prompt that
 works well:
 
 ```text
-You are cleaning up code after an automated feature-flag removal. The behavior
-is already correct; only improve readability without changing runtime behavior.
+Clean up code left by an automated feature-flag removal. Improve readability only; do not change runtime behavior.
 
-Apply only these safe refactors to the files I provide:
-1. Convert a `let` that is now assigned exactly once into a `const`, moving the
-   declaration to the assignment site.
-2. Inline a local variable that is only read once, when it has no observable
-   side effects on move.
-3. Remove a redundant block `{ ... }` by de-scoping its declarations, but only
-   when no declared name collides with or shadows an outer binding and no name
-   is referenced outside the block.
-4. Collapse trivially nested conditionals left by the removal.
+Safe refactors: merge a `let` that is now assigned exactly once into a `const`; inline a variable that is read once; collapse a trivially nested conditional.
 
-Rules:
-- Preserve evaluation order and all side effects (calls, awaits, getters).
-- Do not touch behavior, types, exports, or public APIs.
-- Do not reorder statements across an `await` or a side-effecting call.
-- If a change is not clearly safe, leave the code as-is.
-- Return only the edited files.
-
-After you finish, I will re-run typecheck, lint, format, and tests.
+Preserve evaluation order and every side effect (calls, awaits, getters). Do not change behavior, types, or exports. If a change is not clearly safe, leave it. Return only the edited files.
 ```
-
-Always re-run the deterministic checks (typecheck, lint, format, test) after the
-LLM pass to confirm the refactor preserved behavior.

@@ -151,6 +151,17 @@ npx flag-prune --set 'FLAG=false' --strict src
 
 Check that the file extension reflects its syntax. In particular, `.ts`, `.mts`, and `.cts` are parsed without JSX, while JSX-capable extensions enable JSX parsing.
 
+## Semicolons or quotes changed on some lines
+
+`flag-prune` preserves the original formatting of untouched code, but a statement
+it moves or rewrites is reprinted in a normalized style. A moved expression
+statement gains a trailing semicolon, for example, even if the source relied on
+automatic semicolon insertion. This keeps the output valid and is expected.
+
+Run your formatter (Prettier, Biome, or ESLint with the `semi` and `quotes`
+rules) as part of the [recommended workflow](workflow.md); it normalizes
+semicolon and quote style across the file so the final diff stays consistent.
+
 ## Comments disappeared
 
 Ordinary comments located only in removed code are removed and reported by default.
