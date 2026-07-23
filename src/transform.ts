@@ -169,6 +169,11 @@ function argumentEffects(path: NodePath<t.Expression>): t.Expression[] {
     return effects
   }
   if (path.isObjectExpression()) {
+    // A getter or setter cannot be decomposed into standalone effects, so keep
+    // the whole object rather than silently dropping its accessor.
+    if (path.node.properties.some((property) => t.isObjectMethod(property) && property.kind !== "method")) {
+      return [path.node]
+    }
     const effects: t.Expression[] = []
     for (const property of path.get("properties")) {
       if (property.isSpreadElement()) {

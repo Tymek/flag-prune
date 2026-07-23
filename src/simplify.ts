@@ -273,25 +273,47 @@ function hasDirectLexicalDeclarations(block: t.BlockStatement): boolean {
   )
 }
 
-function cloneMovedExpression(statement: t.ExpressionStatement): t.ExpressionStatement {
+function cloneMovedStatement<S extends t.Statement>(statement: S): S {
   const clone = t.cloneNode(statement, true)
-  const recastStatement = statement as t.ExpressionStatement & { comments?: t.Comment[] }
-  const recastClone = clone as t.ExpressionStatement & { comments?: t.Comment[] }
+  const recastStatement = statement as S & { comments?: t.Comment[] }
+  const recastClone = clone as S & { comments?: t.Comment[] }
   const comments = recastStatement.comments ?? statement.leadingComments
   if (comments != null) recastClone.comments = comments
   return clone
 }
 
+/**
+ * Statement kinds that end with a semicolon. When such a statement is moved out
+ * of a block, its reused source text may lack the semicolon and merge with the
+ * following token, so it must be reprinted from the AST.
+ */
+function isSemicolonTerminated(statement: t.Statement): boolean {
+  return (
+    t.isExpressionStatement(statement) ||
+    t.isVariableDeclaration(statement) ||
+    t.isReturnStatement(statement) ||
+    t.isThrowStatement(statement) ||
+    t.isBreakStatement(statement) ||
+    t.isContinueStatement(statement) ||
+    t.isDebuggerStatement(statement) ||
+    t.isDoWhileStatement(statement)
+  )
+}
+
+function cloneWhenMoved(statement: t.Statement): t.Statement {
+  return isSemicolonTerminated(statement) ? cloneMovedStatement(statement) : statement
+}
+
 function branchStatements(statement: t.Statement): t.Statement[] {
   if (!t.isBlockStatement(statement)) {
-    return [t.isExpressionStatement(statement) ? cloneMovedExpression(statement) : statement]
+    return [cloneWhenMoved(statement)]
   }
   if (hasDirectLexicalDeclarations(statement)) return [statement]
   const body = statement.body
   if (body.length > 0 && statement.leadingComments?.length) {
     body[0]!.leadingComments = [...statement.leadingComments, ...(body[0]!.leadingComments ?? [])]
   }
-  return body.map((child) => (t.isExpressionStatement(child) ? cloneMovedExpression(child) : child))
+  return body.map(cloneWhenMoved)
 }
 
 function attachLeadingComments(statements: t.Statement[], comments: t.Comment[]): t.Statement[] {
@@ -537,9 +559,7 @@ function flattenBlock(path: NodePath<t.BlockStatement>, state: PassState): void 
       body[0]!.leadingComments = [...leading, ...(body[0]!.leadingComments ?? [])]
     }
   }
-  const hoisted = body.map((statement) =>
-    t.isExpressionStatement(statement) ? cloneMovedExpression(statement) : statement,
-  )
+  const hoisted = body.map(cloneWhenMoved)
   path.replaceWithMultiple(hoisted)
   state.changes += 1
   state.report.blocksFlattened += 1

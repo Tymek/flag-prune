@@ -272,6 +272,9 @@ function purityOfNode(node: t.Expression, scope: Scope, position: number | null 
     const purities: Purity[] = []
     for (const property of value.properties) {
       if (t.isSpreadElement(property)) return "unknown"
+      // A getter or setter body runs on later read or write. Treat the literal
+      // as non-pure so purity-based removal never discards those effects.
+      if (t.isObjectMethod(property) && (property.kind === "get" || property.kind === "set")) return "unknown"
       if (property.computed && t.isExpression(property.key)) {
         purities.push(purityOfNode(property.key, scope, position))
       }

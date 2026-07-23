@@ -183,7 +183,7 @@ describe("goal: JSX and loops", () => {
 
   it("de-scopes a safe for-initializer by default and preserves it on request", () => {
     const source = "for (let item = initialize(); (check(), false); update()) work()"
-    expect(run(source).code).toBe("let item = initialize()\ncheck();\n")
+    expect(run(source).code).toBe("let item = initialize();\ncheck();\n")
     expect(run(source, [], { flattenBlocks: false }).code).toBe("{\n  let item = initialize()\n  check();\n}\n")
   })
 

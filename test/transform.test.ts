@@ -427,6 +427,27 @@ describe("object spread cleanup", () => {
   })
 })
 
+describe("getter and setter safety", () => {
+  const flag = [{ call: "client.isEnabled", arguments: ["flag"], value: true }]
+
+  it("preserves an object argument that defines a getter", () => {
+    const result = run('if (client.isEnabled("flag", { get x() { track() } })) run()', flag)
+    expect(result.code).toContain("get x()")
+    expect(result.code).toContain("track()")
+    expect(result.code).toContain("run();")
+  })
+
+  it("preserves an object argument that defines a setter", () => {
+    const result = run('if (client.isEnabled("flag", { set y(v) { track(v) } })) run()', flag)
+    expect(result.code).toContain("set y(v)")
+  })
+
+  it("still drops plain-data and method-only object arguments", () => {
+    expect(run('if (client.isEnabled("flag", { a: 1 })) run()', flag).code).toBe("run();\n")
+    expect(run('if (client.isEnabled("flag", { onClick() {} })) run()', flag).code).toBe("run();\n")
+  })
+})
+
 describe("expression safety", () => {
   it.each([
     ["const value = !!true", "const value = true\n"],
@@ -602,6 +623,14 @@ describe("block de-scoping", () => {
     expect(result.report.blocksFlattened).toBe(1)
     expect(result.code).toContain("const x = 1;")
     expect(result.code).toMatch(/\{\s*const x = 2;?\s*\}/)
+    expect(() => run(result.code, flags)).not.toThrow()
+  })
+
+  it("adds a terminator when hoisting a declaration that lacked a semicolon", () => {
+    const source = "if (FLAG) { const x = 1 }\nif (FLAG) { const x = 2 }\n"
+    const result = run(source, flags)
+    expect(result.report.blocksFlattened).toBe(1)
+    expect(result.code).toContain("const x = 1;")
     expect(() => run(result.code, flags)).not.toThrow()
   })
 

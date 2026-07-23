@@ -27,6 +27,7 @@ Removing a flag read must not accidentally remove observable work. The transform
 - `await` and `yield`.
 - Computed object keys.
 - Spread arguments and spread properties.
+- Object literals that define a getter or setter, which are kept whole rather than decomposed.
 - Other expressions classified as effectful or unknown.
 
 Example:
