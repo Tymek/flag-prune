@@ -94,6 +94,7 @@ See [Flag rules](docs/flag-rules.md) for the complete syntax and matching model.
 - Boolean branches, ternaries, logical expressions, nullish coalescing, and selected loops.
 - String and numeric comparisons such as `===`, `!==`, `<`, `<=`, `>`, and `>=`.
 - Object and array variant values, folding static member and index reads while preserving object identity.
+- Object spreads that provably contribute nothing after folding, such as `...(false)` or `...({})`.
 - Stable local bindings assigned from a configured flag read.
 - JSX conditions and boolean attributes.
 - Unreachable statements after `return`, `throw`, `break`, and `continue` where removal is safe.

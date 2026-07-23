@@ -399,6 +399,34 @@ if (variant.name === "treatment") showNew(); else showOld()`
   })
 })
 
+describe("object spread cleanup", () => {
+  const flags = [{ identifier: "F", value: true }]
+
+  it("removes an object spread that folds to a non-spreading constant", () => {
+    expect(run("const o = { a: 1, ...(!F && { b: 2 }) }", flags).code).toBe("const o = {\n  a: 1\n}\n")
+  })
+
+  it("removes an object spread that folds to an empty object", () => {
+    expect(run("const o = { a: 1, ...(F ? {} : { b: 2 }) }", flags).code).toBe("const o = {\n  a: 1\n}\n")
+  })
+
+  it("keeps a spread that still contributes properties", () => {
+    expect(run("const o = { ...(F ? { x: 1 } : { y: 2 }) }", flags).code).toContain("x: 1")
+  })
+
+  it("keeps a string spread because it spreads indices", () => {
+    expect(run('const o = { ...(F ? "ab" : "cd") }', flags).code).toContain('"ab"')
+  })
+
+  it("never rewrites array spreads", () => {
+    expect(run("const arr = [1, ...(F ? [] : [2])]", flags).code).toContain("...")
+  })
+
+  it("keeps an effectful spread argument", () => {
+    expect(run("const o = { ...(F ? (log(), {}) : { y: 2 }) }", flags).code).toContain("log()")
+  })
+})
+
 describe("expression safety", () => {
   it.each([
     ["const value = !!true", "const value = true\n"],

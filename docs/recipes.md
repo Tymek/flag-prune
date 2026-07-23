@@ -166,6 +166,37 @@ track(variant)
 showTreatment()
 ```
 
+## Remove a conditional object spread
+
+A flag inside an object spread often folds to a value that spreads nothing.
+
+Source:
+
+```ts
+const where = {
+  deactivatedAt: null,
+  ...(hasFeature.newAccessControl ? {} : { permission: "COMPLIANCE_OFFICER" }),
+}
+```
+
+Command:
+
+```sh
+npx flag-prune --set 'hasFeature.newAccessControl=true' --write src
+```
+
+Result:
+
+```ts
+const where = {
+  deactivatedAt: null,
+}
+```
+
+The `...({})` spread is removed because it contributes no properties. See
+[Empty object spreads are removed](safety.md#empty-object-spreads-are-removed)
+for the exact rules.
+
 ## Resolve a numeric limit
 
 Source:

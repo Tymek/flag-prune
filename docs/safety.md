@@ -115,6 +115,32 @@ The declaration is removed only when every read is folded and nothing else uses
 the binding. Member reads on an inline literal are folded only when the literal
 is pure, so no observable evaluation is discarded.
 
+## Empty object spreads are removed
+
+Folding a flag inside an object spread can leave a spread that contributes no
+properties, such as `...(false)` or `...({})`:
+
+```ts
+const where = {
+  deactivatedAt: null,
+  ...(hasFeature.newAccessControl ? {} : { permission: "COMPLIANCE_OFFICER" }),
+}
+```
+
+With `hasFeature.newAccessControl` true, the spread folds to `...({})` and is
+removed:
+
+```ts
+const where = {
+  deactivatedAt: null,
+}
+```
+
+Only object spreads are simplified, and only when the argument is pure and
+provably contributes nothing: a boolean, number, bigint, or `null`, or an empty
+object or array literal. String spreads, array spreads, non-empty objects, and
+any spread whose argument has side effects are left unchanged.
+
 ## Lexical scope is de-scoped only when safe
 
 Removing an `if` or loop can leave a bare block that exists only to scope `let`,

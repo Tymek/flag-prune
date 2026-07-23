@@ -609,6 +609,39 @@ function readArrayIndex(
   return index === undefined ? undefined : arrayLiteralValue(array, index)
 }
 
+/**
+ * Whether an expression, spread into an object, contributes no own enumerable
+ * properties. Booleans, numbers, bigints, and null spread nothing, as do empty
+ * object and array literals. Strings are excluded because they spread indices.
+ */
+function spreadsNothingIntoObject(node: t.Expression): boolean {
+  const value = unwrapExpression(node)
+  if (
+    t.isBooleanLiteral(value) ||
+    t.isNumericLiteral(value) ||
+    t.isNullLiteral(value) ||
+    t.isBigIntLiteral(value)
+  ) {
+    return true
+  }
+  if (t.isObjectExpression(value)) return value.properties.length === 0
+  if (t.isArrayExpression(value)) return value.elements.length === 0
+  return false
+}
+
+/** Remove object spreads whose pure argument provably contributes no properties. */
+function simplifyObjectSpread(path: NodePath<t.ObjectExpression>, state: PassState): void {
+  for (const property of path.get("properties")) {
+    if (!property.isSpreadElement()) continue
+    const argument = property.get("argument")
+    if (argument.isExpression() && spreadsNothingIntoObject(argument.node) && isRemovablePure(argument)) {
+      property.remove()
+      state.changes += 1
+      state.report.expressionsFolded += 1
+    }
+  }
+}
+
 export function simplifyPass(
   ast: t.File,
   options: SimplifyOptions,
@@ -683,6 +716,11 @@ export function simplifyPass(
     OptionalMemberExpression: {
       exit(path) {
         simplifyMemberAccess(path, state)
+      },
+    },
+    ObjectExpression: {
+      exit(path) {
+        simplifyObjectSpread(path, state)
       },
     },
     BlockStatement: {
