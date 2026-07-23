@@ -10,6 +10,11 @@ import {
   requiredEffects,
   sequenceWithResult,
   truthinessOf,
+  arrayLiteralValue,
+  objectLiteralValue,
+  staticIndex,
+  staticMemberKey,
+  unwrapExpression,
 } from "./analysis.js"
 import type { CommentPolicy, TransformReport } from "./types.js"
 
@@ -480,6 +485,37 @@ function simplifyJsxContainer(path: NodePath<t.JSXExpressionContainer>, state: P
   }
 }
 
+function simplifyMemberAccess(
+  path: NodePath<t.MemberExpression | t.OptionalMemberExpression>,
+  state: PassState,
+): void {
+  const objectPath = expressionPath(path, "object")
+  const object = unwrapExpression(objectPath.node)
+  if (!t.isObjectExpression(object) && !t.isArrayExpression(object)) return
+  if (!isRemovablePure(objectPath)) return
+  const value = t.isObjectExpression(object)
+    ? readObjectKey(object, path.node)
+    : readArrayIndex(object, path.node)
+  if (value === undefined) return
+  replaceExpression(path, t.cloneNode(value, true), state)
+}
+
+function readObjectKey(
+  object: t.ObjectExpression,
+  node: t.MemberExpression | t.OptionalMemberExpression,
+): t.Expression | undefined {
+  const key = staticMemberKey(node)
+  return key === undefined ? undefined : objectLiteralValue(object, key)
+}
+
+function readArrayIndex(
+  array: t.ArrayExpression,
+  node: t.MemberExpression | t.OptionalMemberExpression,
+): t.Expression | undefined {
+  const index = staticIndex(node)
+  return index === undefined ? undefined : arrayLiteralValue(array, index)
+}
+
 export function simplifyPass(
   ast: t.File,
   options: SimplifyOptions,
@@ -544,6 +580,16 @@ export function simplifyPass(
     JSXExpressionContainer: {
       exit(path) {
         simplifyJsxContainer(path, state)
+      },
+    },
+    MemberExpression: {
+      exit(path) {
+        simplifyMemberAccess(path, state)
+      },
+    },
+    OptionalMemberExpression: {
+      exit(path) {
+        simplifyMemberAccess(path, state)
       },
     },
     BlockStatement: {

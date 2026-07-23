@@ -324,6 +324,81 @@ function run(hasFeature: FeatureSet) {
   })
 })
 
+describe("object and variant values", () => {
+  it("folds member reads of a variant object and collapses the branch", () => {
+    const source = `const variant = getVariant("checkout")
+if (variant.enabled && variant.name === "treatment") showNew(); else showOld()`
+    const result = run(source, [
+      { call: "getVariant", arguments: ["checkout"], value: { enabled: true, name: "treatment" } },
+    ])
+    expect(result.code).toBe("showNew();\n")
+    expect(result.report.flagsReplaced).toBe(1)
+    expect(result.report.deadBranchesRemoved).toBe(1)
+  })
+
+  it("folds a direct member chain without a binding", () => {
+    const result = run('applyTheme(useFlag("theme").payload.mode)', [
+      { call: "useFlag", arguments: ["theme"], value: { payload: { mode: "dark" } } },
+    ])
+    expect(result.code).toBe('applyTheme("dark")\n')
+  })
+
+  it("folds array index reads of an array-valued flag", () => {
+    const result = run('const first = getWeights("split")[0]', [
+      { call: "getWeights", arguments: ["split"], value: [10, 20] },
+    ])
+    expect(result.code).toBe("const first = 10\n")
+  })
+
+  it("retains the declaration and object identity for whole-object uses", () => {
+    const source = `const variant = getVariant("checkout")
+logVariant(variant)
+if (variant.enabled) newUi(); else oldUi()`
+    const result = run(source, [
+      { call: "getVariant", arguments: ["checkout"], value: { enabled: true, name: "t" } },
+    ])
+    expect(result.code).toContain('const variant = {\n  enabled: true,\n  name: "t"\n}')
+    expect(result.code).toContain("logVariant(variant)")
+    expect(result.code).toContain("newUi();")
+    expect(result.code).not.toContain("oldUi()")
+    expect(result.report.bindingsRemoved).toBe(0)
+  })
+
+  it("removes the binding when every member read is folded", () => {
+    const source = `const variant = getVariant("checkout")
+if (variant.enabled) newUi(); else oldUi()`
+    const result = run(source, [
+      { call: "getVariant", arguments: ["checkout"], value: { enabled: false } },
+    ])
+    expect(result.code).toBe("oldUi();\n")
+    expect(result.report.bindingsRemoved).toBe(1)
+  })
+
+  it("quotes non-identifier object keys and preserves them for whole uses", () => {
+    const result = run('send(getConfig("x"))', [
+      { call: "getConfig", arguments: ["x"], value: { "content-type": "json", nested: [1, true, null] } },
+    ])
+    expect(result.code).toContain('"content-type": "json"')
+    expect(result.code).toContain("nested: [1, true, null]")
+  })
+
+  it("is idempotent for a variant migration", () => {
+    const source = `const variant = getVariant("checkout")
+if (variant.name === "treatment") showNew(); else showOld()`
+    const flags = [{ call: "getVariant", arguments: ["checkout"], value: { name: "treatment" } }]
+    const once = run(source, flags).code
+    const twice = run(once, flags).code
+    expect(twice).toBe(once)
+  })
+
+  it("does not fold member reads on unknown object shapes", () => {
+    const source = 'const enabled = getVariant("x").enabled'
+    const result = run(source, [{ call: "getVariant", arguments: ["x"], value: { name: "t" } }])
+    expect(result.code).toContain(".enabled")
+    expect(result.code).toContain('name: "t"')
+  })
+})
+
 describe("expression safety", () => {
   it.each([
     ["const value = !!true", "const value = true\n"],
@@ -543,5 +618,18 @@ describe("configuration", () => {
     const config = validateConfig({ flags: [{ call: "useFlag", arguments: ["new-ui"] }] })
     expect(config.flags[0]?.value).toBe(true)
     expect(run('if (useFlag("new-ui")) yes(); else no();', config.flags).code).toBe("yes();\n")
+  })
+
+  it("accepts nested object and array values but rejects non-JSON leaves", () => {
+    const config = validateConfig({
+      flags: [{ call: "getVariant", arguments: ["x"], value: { enabled: true, weights: [1, 2], name: null } }],
+    })
+    expect(config.flags[0]?.value).toEqual({ enabled: true, weights: [1, 2], name: null })
+    expect(() =>
+      validateConfig({ flags: [{ identifier: "FLAG", value: { fn: (() => 1) as unknown as boolean } }] }),
+    ).toThrow(/value\.fn must be a string, number, boolean, null, array, or object/)
+    expect(() =>
+      validateConfig({ flags: [{ identifier: "FLAG", value: [Number.NaN] }] }),
+    ).toThrow(/value\[0\] must be a finite number/)
   })
 })

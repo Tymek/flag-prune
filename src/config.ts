@@ -26,6 +26,26 @@ const ALLOWED_CONFIG_KEYS = new Set([
 ])
 const ALLOWED_VERIFY_KEYS = new Set(["parse"])
 
+function validateFlagValue(value: unknown, index: number, path: string): void {
+  if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
+    if (typeof value === "number" && !Number.isFinite(value)) {
+      fail(`flags[${index}].value${path} must be a finite number`)
+    }
+    return
+  }
+  if (Array.isArray(value)) {
+    value.forEach((element, elementIndex) => validateFlagValue(element, index, `${path}[${elementIndex}]`))
+    return
+  }
+  if (typeof value === "object") {
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      validateFlagValue(entry, index, `${path}.${key}`)
+    }
+    return
+  }
+  fail(`flags[${index}].value${path} must be a string, number, boolean, null, array, or object`)
+}
+
 function validateFlag(flag: unknown, index: number): FlagDefinition {
   if (typeof flag !== "object" || flag === null || Array.isArray(flag)) {
     fail(`flags[${index}] must be an object`)
@@ -35,12 +55,8 @@ function validateFlag(flag: unknown, index: number): FlagDefinition {
   for (const key of Object.keys(value)) {
     if (!ALLOWED_FLAG_KEYS.has(key)) fail(`flags[${index}] has unknown key "${key}"`)
   }
-  if (
-    value.value !== undefined &&
-    value.value !== null &&
-    !["string", "number", "boolean"].includes(typeof value.value)
-  ) {
-    fail(`flags[${index}].value must be a string, number, boolean, or null`)
+  if (value.value !== undefined) {
+    validateFlagValue(value.value, index, "")
   }
   if (value.module !== undefined && typeof value.module !== "string") fail(`flags[${index}].module must be string`)
   if (value.export !== undefined && typeof value.export !== "string") fail(`flags[${index}].export must be string`)

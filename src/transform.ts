@@ -2,7 +2,7 @@ import { parse as parseWithBabel } from "@babel/parser"
 import traverse, { type Binding, type NodePath } from "@babel/traverse"
 import * as t from "@babel/types"
 import { parse as parseWithRecast, print } from "recast"
-import { constantOf, isRemovablePure, requiredEffects } from "./analysis.js"
+import { constantOf, isRemovablePure, requiredEffects, staticIndex, staticMemberKey } from "./analysis.js"
 import { validateConfig } from "./config.js"
 import { buildMatchers, matchCall, matchValue, type FlagMatcher } from "./matchers.js"
 import { simplifyPass } from "./simplify.js"
@@ -103,7 +103,32 @@ function literalFor(value: FlagValue): t.Expression {
       ? t.unaryExpression("-", t.numericLiteral(Math.abs(value)))
       : t.numericLiteral(value)
   }
-  return t.booleanLiteral(value)
+  if (typeof value === "boolean") return t.booleanLiteral(value)
+  if (Array.isArray(value)) return t.arrayExpression(value.map(literalFor))
+  return t.objectExpression(
+    Object.entries(value).map(([key, entry]) => t.objectProperty(objectKeyFor(key), literalFor(entry))),
+  )
+}
+
+function objectKeyFor(key: string): t.Identifier | t.StringLiteral {
+  return /^[$A-Z_a-z][$\w]*$/.test(key) ? t.identifier(key) : t.stringLiteral(key)
+}
+
+function isStructuredValue(value: FlagValue): value is FlagValue[] | { [key: string]: FlagValue } {
+  return typeof value === "object" && value !== null
+}
+
+/** Read a static property or index of a structured flag value from a member access node. */
+function structuredEntry(
+  value: FlagValue[] | { [key: string]: FlagValue },
+  node: t.MemberExpression | t.OptionalMemberExpression,
+): FlagValue | undefined {
+  if (Array.isArray(value)) {
+    const index = staticIndex(node)
+    return index !== undefined && index < value.length ? value[index] : undefined
+  }
+  const key = staticMemberKey(node)
+  return key !== undefined && Object.prototype.hasOwnProperty.call(value, key) ? value[key] : undefined
 }
 
 function flagValueOf(matcher: FlagMatcher): FlagValue {
@@ -205,22 +230,63 @@ function callReplacement(
 
 function inlineConstantBindings(state: ReplacementState): void {
   for (const [binding, value] of state.constantBindings) {
-    for (const reference of binding.referencePaths) {
-      if (
-        reference.removed ||
-        !reference.isReferencedIdentifier() ||
-        reference.parentPath.isExportSpecifier() ||
-        reference.parentPath.isTSTypeQuery()
-      ) {
-        continue
-      }
-      const replacement = literalFor(value)
-      t.inheritsComments(replacement, reference.node)
-      disableObjectShorthand(reference as NodePath<t.Expression>)
-      reference.replaceWith(replacement)
-      state.report.expressionsFolded += 1
-    }
+    if (isStructuredValue(value)) inlineStructuredBinding(binding, value, state)
+    else inlineScalarBinding(binding, value, state)
     state.matchedBindings.add(binding)
+  }
+}
+
+function inlineScalarBinding(binding: Binding, value: FlagValue, state: ReplacementState): void {
+  for (const reference of binding.referencePaths) {
+    if (
+      reference.removed ||
+      !reference.isReferencedIdentifier() ||
+      reference.parentPath.isExportSpecifier() ||
+      reference.parentPath.isTSTypeQuery()
+    ) {
+      continue
+    }
+    const replacement = literalFor(value)
+    t.inheritsComments(replacement, reference.node)
+    disableObjectShorthand(reference as NodePath<t.Expression>)
+    reference.replaceWith(replacement)
+    state.report.expressionsFolded += 1
+  }
+}
+
+/**
+ * Fold static member and index reads of an object or array flag value. The
+ * declaration is left in place so object identity is preserved for whole-value
+ * uses; unused declarations are removed later by binding cleanup.
+ */
+function inlineStructuredBinding(
+  binding: Binding,
+  value: FlagValue[] | { [key: string]: FlagValue },
+  state: ReplacementState,
+): void {
+  for (const reference of binding.referencePaths) {
+    if (
+      reference.removed ||
+      !reference.isReferencedIdentifier() ||
+      reference.parentPath.isExportSpecifier() ||
+      reference.parentPath.isTSTypeQuery()
+    ) {
+      continue
+    }
+    const parent = reference.parentPath
+    if (
+      (parent.isMemberExpression() || parent.isOptionalMemberExpression()) &&
+      parent.node.object === reference.node
+    ) {
+      const entry = structuredEntry(value, parent.node)
+      if (entry !== undefined) {
+        const replacement = literalFor(entry)
+        t.inheritsComments(replacement, parent.node)
+        disableObjectShorthand(parent as NodePath<t.Expression>)
+        parent.replaceWith(replacement)
+        state.report.expressionsFolded += 1
+      }
+    }
   }
 }
 

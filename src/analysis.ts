@@ -28,6 +28,62 @@ function unwrap(node: t.Expression): t.Expression {
   return node
 }
 
+/** Strip parentheses and TypeScript-only wrapper expressions from a node. */
+export function unwrapExpression(node: t.Expression): t.Expression {
+  return unwrap(node)
+}
+
+/** Static member name for `a.b` or `a["b"]`, or undefined for dynamic access. */
+export function staticMemberKey(node: t.MemberExpression | t.OptionalMemberExpression): string | undefined {
+  if (!node.computed && t.isIdentifier(node.property)) return node.property.name
+  if (node.computed && t.isStringLiteral(node.property)) return node.property.value
+  return undefined
+}
+
+/** Non-negative integer index for `a[0]`, or undefined for dynamic access. */
+export function staticIndex(node: t.MemberExpression | t.OptionalMemberExpression): number | undefined {
+  if (
+    node.computed &&
+    t.isNumericLiteral(node.property) &&
+    Number.isInteger(node.property.value) &&
+    node.property.value >= 0
+  ) {
+    return node.property.value
+  }
+  return undefined
+}
+
+/**
+ * Value of a static key on a plain object literal, honoring last-write-wins.
+ * Returns undefined when the literal contains a spread, method, getter, computed
+ * key, or non-expression value that would make the read unsafe to fold.
+ */
+export function objectLiteralValue(node: t.ObjectExpression, key: string): t.Expression | undefined {
+  let result: t.Expression | undefined
+  for (const property of node.properties) {
+    if (!t.isObjectProperty(property) || property.computed || !t.isExpression(property.value)) return undefined
+    const propertyKey = t.isIdentifier(property.key)
+      ? property.key.name
+      : t.isStringLiteral(property.key)
+        ? property.key.value
+        : t.isNumericLiteral(property.key)
+          ? String(property.key.value)
+          : undefined
+    if (propertyKey === undefined) return undefined
+    if (propertyKey === key) result = property.value
+  }
+  return result
+}
+
+/** Element at a static index on a dense array literal, or undefined when unsafe. */
+export function arrayLiteralValue(node: t.ArrayExpression, index: number): t.Expression | undefined {
+  for (const element of node.elements) {
+    if (element === null || t.isSpreadElement(element)) return undefined
+  }
+  const element = node.elements[index]
+  return element != null && t.isExpression(element) ? element : undefined
+}
+
 export type LiteralPrimitive = string | number | boolean | bigint | null
 
 export function literalPrimitiveOf(input: t.Expression): { value: LiteralPrimitive } | undefined {

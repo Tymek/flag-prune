@@ -65,9 +65,21 @@ interface FlagDefinition {
   path?: string[]
   call?: string
   arguments?: Array<string | number | boolean | null>
-  value?: string | number | boolean | null
+  value?: FlagValue
 }
+
+type FlagValue =
+  | string
+  | number
+  | boolean
+  | null
+  | FlagValue[]
+  | { [key: string]: FlagValue }
 ```
+
+A `value` may be a primitive or a nested array or object. Object and array
+values model variant payloads: `flag-prune` folds static member and index reads
+of the resolved value while preserving object identity for whole-value uses.
 
 ### Identifier or member
 

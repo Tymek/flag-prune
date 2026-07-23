@@ -89,6 +89,32 @@ stays unchanged in value context because `load()` might return a non-boolean val
 
 Boolean identities are applied only when the expression is known to be boolean, such as a literal, a boolean annotation, or a stable boolean initializer.
 
+## Object identity is preserved
+
+When a flag resolves to an object or array value, `flag-prune` folds static
+member and index reads to their configured values but does not inline the whole
+value at each reference. Reusing the same binding keeps object identity intact:
+
+```ts
+const variant = getVariant("checkout")
+register(variant)
+if (variant.enabled) enable()
+```
+
+With `getVariant("checkout")={ enabled: true }`, `variant.enabled` folds to
+`true`, but the declaration is kept so `register(variant)` still receives one
+object:
+
+```ts
+const variant = { enabled: true }
+register(variant)
+enable()
+```
+
+The declaration is removed only when every read is folded and nothing else uses
+the binding. Member reads on an inline literal are folded only when the literal
+is pure, so no observable evaluation is discarded.
+
 ## Lexical scope is preserved
 
 Removing an `if` or loop does not flatten a block when that would change the scope of `let`, `const`, function, or class declarations.

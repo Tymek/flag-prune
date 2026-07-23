@@ -9,7 +9,14 @@ export interface Analysis {
 
 export type FlagArgument = string | number | boolean | null
 
-export type FlagValue = string | number | boolean | null
+export type FlagPrimitive = string | number | boolean | null
+
+/**
+ * Replacement value for a flag. Primitives cover boolean, string, numeric, and
+ * null flags. Arrays and plain objects model variant payloads returned by SDKs
+ * such as Unleash `getVariant` or OpenFeature `useFlag`.
+ */
+export type FlagValue = FlagPrimitive | FlagValue[] | { [key: string]: FlagValue }
 
 export interface FlagDefinition {
   /** Exact module specifier from an import declaration. */

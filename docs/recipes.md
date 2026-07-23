@@ -125,6 +125,47 @@ Result:
 showTreatment()
 ```
 
+## Resolve a variant object
+
+Some SDKs return a variant object rather than a bare string. Give the flag its
+final object value and `flag-prune` folds each static member read.
+
+Source:
+
+```ts
+const variant = getVariant("checkout")
+
+if (variant.enabled && variant.name === "treatment") {
+  showTreatment()
+} else {
+  showControl()
+}
+```
+
+Command:
+
+```sh
+npx flag-prune \
+  --set 'getVariant("checkout")={ enabled: true, name: "treatment" }' \
+  --write \
+  src
+```
+
+Result:
+
+```ts
+showTreatment()
+```
+
+If the object is also used as a whole value, the declaration is kept and only
+the member reads are folded:
+
+```ts
+const variant = { enabled: true, name: "treatment" }
+track(variant)
+showTreatment()
+```
+
 ## Resolve a numeric limit
 
 Source:

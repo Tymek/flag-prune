@@ -221,6 +221,27 @@ describe("flag-prune process", () => {
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
   })
 
+  it("parses an object variant value and folds member reads", async () => {
+    const cwd = await fixture()
+    await writeFile(
+      join(cwd, "input.ts"),
+      'const v = getVariant("checkout")\nif (v.enabled && v.name === "treatment") show(); else hide();\n',
+    )
+    const result = await invoke(
+      ["--set", 'getVariant("checkout")={ enabled: true, name: "treatment" }', "--write", "input.ts"],
+      cwd,
+    )
+    expect(result).toMatchObject({ code: 0, stderr: "" })
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("show();\n")
+  })
+
+  it("reports a malformed object value as a usage error", async () => {
+    const cwd = await fixture()
+    const result = await invoke(["--set", 'getVariant("x")={ enabled: }', "input.ts"], cwd)
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain("malformed object or array literal")
+  })
+
   it("accepts an exact call rule and removes an assigned flag binding", async () => {
     const cwd = await fixture()
     await writeFile(

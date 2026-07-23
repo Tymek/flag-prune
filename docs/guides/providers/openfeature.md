@@ -43,9 +43,30 @@ Preview the final value:
 npx flag-prune --set 'useBooleanFlagValue("new-checkout")=false' src
 ```
 
-OpenFeature's `useFlag()` returns a structured object. Do not replace the whole
-result with a primitive; prefer a typed primitive hook such as
-`useBooleanFlagValue()` for this workflow.
+## React `useFlag` query hook
+
+OpenFeature's `useFlag()` returns a structured object with `value` and
+`reason`. Give the call its final object value and `flag-prune` folds the
+destructured or member read.
+
+Before:
+
+```tsx
+const { value: variant } = useFlag("checkout-version", "v1")
+return variant === "v2" ? <CheckoutV2 /> : <CheckoutV1 />
+```
+
+A destructured `value` is read through a member access after resolution, so
+supply the object shape the hook returns:
+
+```sh
+npx flag-prune --set 'useFlag("checkout-version")={ value: "v2", reason: "STATIC" }' src
+```
+
+When the code reads `useFlag(...).value` directly, the member read folds to
+`"v2"` and the branch collapses to `<CheckoutV2 />`. A destructuring pattern
+such as `const { value } = useFlag(...)` is not folded automatically; convert it
+to a member read, or use a typed primitive hook such as `useBooleanFlagValue()`.
 
 See [all provider guides](README.md) and the detailed [call matching
 rules](../../flag-rules.md#calls).

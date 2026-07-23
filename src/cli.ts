@@ -132,6 +132,15 @@ function parseValueToken(raw: string, rule: string): FlagValue {
   if (raw === "false") return false
   if (raw === "null") return null
   if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(raw)) return Number(raw)
+  if (raw.startsWith("{") || raw.startsWith("[")) {
+    let expression: t.Expression
+    try {
+      expression = parseExpression(raw)
+    } catch {
+      throw new Error(`invalid --set value: ${rule}; malformed object or array literal`)
+    }
+    return expressionToFlagValue(expression, rule)
+  }
   if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
     try {
       return JSON.parse(raw) as string
@@ -141,6 +150,44 @@ function parseValueToken(raw: string, rule: string): FlagValue {
   }
   if (raw.length >= 2 && raw.startsWith("'") && raw.endsWith("'")) return raw.slice(1, -1)
   return raw
+}
+
+/** Convert a static literal expression into a flag value, rejecting dynamic shapes. */
+function expressionToFlagValue(node: t.Expression | t.PatternLike, rule: string): FlagValue {
+  if (t.isStringLiteral(node) || t.isNumericLiteral(node) || t.isBooleanLiteral(node)) return node.value
+  if (t.isNullLiteral(node)) return null
+  if (t.isUnaryExpression(node, { operator: "-" }) && t.isNumericLiteral(node.argument)) {
+    return -node.argument.value
+  }
+  if (t.isArrayExpression(node)) {
+    return node.elements.map((element) => {
+      if (element === null || t.isSpreadElement(element)) {
+        throw new Error(`invalid --set value: ${rule}; array elements must be static literals`)
+      }
+      return expressionToFlagValue(element, rule)
+    })
+  }
+  if (t.isObjectExpression(node)) {
+    const result: { [key: string]: FlagValue } = {}
+    for (const property of node.properties) {
+      if (!t.isObjectProperty(property) || property.computed) {
+        throw new Error(`invalid --set value: ${rule}; object properties must be static and unquoted or string keys`)
+      }
+      const key = t.isIdentifier(property.key)
+        ? property.key.name
+        : t.isStringLiteral(property.key)
+          ? property.key.value
+          : t.isNumericLiteral(property.key)
+            ? String(property.key.value)
+            : undefined
+      if (key === undefined || !t.isExpression(property.value)) {
+        throw new Error(`invalid --set value: ${rule}; object properties must be static literals`)
+      }
+      result[key] = expressionToFlagValue(property.value, rule)
+    }
+    return result
+  }
+  throw new Error(`invalid --set value: ${rule}; values must be static JSON literals`)
 }
 
 /** Split a flag rule into its selector and replacement value at the first top-level '='. */
@@ -154,8 +201,8 @@ function splitValue(rule: string): { selector: string; value: FlagValue } {
       continue
     }
     if (character === '"' || character === "'") quote = character
-    else if (character === "(" || character === "[") depth += 1
-    else if (character === ")" || character === "]") depth -= 1
+    else if (character === "(" || character === "[" || character === "{") depth += 1
+    else if (character === ")" || character === "]" || character === "}") depth -= 1
     else if (character === "=" && depth === 0) {
       return { selector: rule.slice(0, index), value: parseValueToken(rule.slice(index + 1), rule) }
     }

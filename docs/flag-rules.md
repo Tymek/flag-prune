@@ -174,6 +174,8 @@ Supported values are:
 | Number  | `0`, `25`, `-1`, `3.5`                  |
 | Null    | `null`                                  |
 | String  | `treatment`, `'pro tier'`, `"pro tier"` |
+| Array   | `[10, 20]`, `["a", "b"]`                |
+| Object  | `{ enabled: true, name: "treatment" }`  |
 
 Unquoted tokens that are not booleans, numbers, or `null` are strings:
 
@@ -186,6 +188,46 @@ Quote a string value when it contains spaces or shell-sensitive characters:
 ```sh
 npx flag-prune --set 'getVariant("checkout")="new treatment"' src
 ```
+
+### Object and array variants
+
+A value that begins with `{` or `[` is parsed as a static object or array
+literal. Use this for SDKs that return a variant object such as Unleash
+`getVariant` or OpenFeature `useFlag`:
+
+```sh
+npx flag-prune --set 'getVariant("checkout")={ enabled: true, name: "treatment" }' src
+```
+
+Object and array values may nest, and their leaves must be static booleans,
+numbers, strings, or `null`. Keys may be bare identifiers or quoted strings:
+
+```sh
+npx flag-prune --set 'useFlag("theme")={ payload: { mode: "dark" }, "content-type": "json" }' src
+```
+
+Quote the whole rule in your shell so the braces and spaces are passed through
+intact.
+
+When a flag resolves to an object or array, `flag-prune` folds static member and
+index reads to their configured values:
+
+```ts
+const variant = getVariant("checkout")
+if (variant.enabled && variant.name === "treatment") {
+  showTreatment()
+}
+```
+
+With `getVariant("checkout")={ enabled: true, name: "treatment" }`, this becomes:
+
+```ts
+showTreatment()
+```
+
+Object identity is preserved. The declaration is kept when the whole value is
+still used elsewhere (for example passed to a function), and only the member
+reads are folded. A declaration whose reads are all folded is removed as unused.
 
 ## Matching is exact and scope-aware
 

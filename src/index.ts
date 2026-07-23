@@ -7,6 +7,7 @@ export type {
   FlagArgument,
   FlagCleanConfig,
   FlagDefinition,
+  FlagPrimitive,
   FlagValue,
   Purity,
   RemovedComment,
