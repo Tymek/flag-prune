@@ -124,6 +124,7 @@ AI tools and documentation crawlers can use
 | [Provider guides](docs/guides/providers/README.md) | Remove flags from popular feature flag providers: [Unleash](docs/guides/providers/unleash.md), [LaunchDarkly](docs/guides/providers/launchdarkly.md), [PostHog](docs/guides/providers/posthog.md), [Statsig](docs/guides/providers/statsig.md), [OpenFeature](docs/guides/providers/openfeature.md).       |
 | [Documentation overview](docs/README.md)           | Choose the right guide or reference page               |
 | [Getting started](docs/getting-started.md)         | Run a first migration safely                           |
+| [Recommended workflow](docs/workflow.md)           | Chain flag-prune with checks, dead-code tools, and an LLM cleanup pass |
 | [Flag rules](docs/flag-rules.md)                   | Define exact member, import, and call matches          |
 | [Recipes](docs/recipes.md)                         | Copy focused examples for common flag shapes           |
 | [CLI reference](docs/cli.md)                       | Review options, file discovery, output, and exit codes |

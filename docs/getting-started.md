@@ -119,6 +119,7 @@ Applying related final values together lets the simplifier fold expressions that
 
 ## Next steps
 
+- Fit the tool into a full cleanup pipeline with [Recommended workflow](workflow.md).
 - Learn the complete selector syntax in [Flag rules](flag-rules.md).
 - Find SDK examples in the [feature flag provider guides](guides/providers/README.md).
 - Copy provider-agnostic examples from [Recipes](recipes.md).

@@ -18,4 +18,16 @@ npx flag-prune --set 'useFlag("new-checkout")=true' --write ./src
 
 Run your project's typecheck, lint, dead-code elimination, and tests after writing the change.
 
+## Recommended workflow
+
+flag-prune is the deterministic step in a larger cleanup:
+
+1. flag-prune (dry-run, review, then --write; add --flatten-blocks to de-scope)
+2. typecheck, lint, format, test
+3. dead-code removal tool (Knip, Fallow, ts-prune)
+4. optional LLM pass for readability and scoping refactors
+
+See [Recommended workflow](https://github.com/Tymek/flag-prune/blob/master/docs/workflow.md)
+for the full pipeline, an LLM cleanup prompt, and examples.
+
 Run `npx flag-prune --help` to see all parameters, or open [full documentation](https://github.com/Tymek/flag-prune/blob/master/docs/README.md)

@@ -9,6 +9,7 @@ For AI tools and documentation crawlers, see [`llms.txt`](llms.txt).
 | Goal                                                                 | Page                                  |
 | -------------------------------------------------------------------- | ------------------------------------- |
 | Remove one flag for the first time                                   | [Getting started](getting-started.md) |
+| Fit the tool into a full cleanup pipeline                            | [Recommended workflow](workflow.md)   |
 | Remove flags from a specific feature flag SDK                        | [Provider guides](guides/providers/README.md) |
 | Express a hook, client method, imported constant, variant, or member | [Flag rules](flag-rules.md)           |
 | Copy a complete command for a common migration                       | [Recipes](recipes.md)                 |
@@ -54,17 +55,25 @@ The now-unused `variant` binding and dead branch are removed as part of the same
 
 ## Recommended workflow
 
+`flag-prune` is one deterministic step in a larger cleanup. A full pass is:
+
 1. Run in dry-run mode, which is the default.
 2. Review the unified diff and warnings.
 3. Rerun with `--write`.
-4. Run your typecheck, lint, and tests.
-5. Rerun the same command. A completed migration should be a no-op.
+4. Run your typecheck, lint, format, and tests.
+5. Run a dead-code removal tool for unused files and exports.
+6. Optionally finish with an LLM pass for readability and scoping.
+7. Rerun the same `flag-prune` command. A completed migration should be a no-op.
+
+See [Recommended workflow](workflow.md) for the full pipeline, an LLM cleanup
+prompt, and examples.
 
 ## Reference map
 
 ### Guides
 
 - [Getting started](getting-started.md)
+- [Recommended workflow](workflow.md)
 - [Provider guides](guides/providers/README.md)
 - [Recipes](recipes.md)
 - [CI and automation](ci.md)
