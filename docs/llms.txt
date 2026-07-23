@@ -18,6 +18,4 @@ npx flag-prune --set 'useFlag("new-checkout")=true' --write ./src
 
 Run your project's typecheck, lint, dead-code elimination, and tests after writing the change.
 
-## Full documentation
-
-- [flag-prune documentation](https://github.com/Tymek/flag-prune/blob/master/docs/README.md)
+Run `npx flag-prune --help` to see all parameters, or open [full documentation](https://github.com/Tymek/flag-prune/blob/master/docs/README.md)
