@@ -104,7 +104,7 @@ See [Flag rules](docs/flag-rules.md) for the complete syntax and matching model.
 - Unknown values and dynamic flag keys stay untouched. Calls with non-static arguments are not matched.
 - Unused files, unused exports, or unused imports that are still referenced by other code are not removed. Use a linter or dead-code tool for that.
 - The transform does not discard required `await`, `yield`, or other side effects. Calls, getters, computed keys, spreads, and other observable evaluation are preserved.
-- Lexical scope and protects important comments are protected. Opt into de-scoping safe blocks with `--flatten-blocks`, which hoists declarations only when no name collision can occur.
+- Lexical scope and protects important comments are protected. Safe scoping blocks left by folding are de-scoped by default (only when provably safe); opt out with `--no-flatten-blocks`.
 
 See [Safety guarantees](docs/safety.md) for the detailed rules and opt-outs.
 

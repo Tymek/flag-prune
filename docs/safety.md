@@ -115,31 +115,22 @@ The declaration is removed only when every read is folded and nothing else uses
 the binding. Member reads on an inline literal are folded only when the literal
 is pure, so no observable evaluation is discarded.
 
-## Lexical scope is preserved
+## Lexical scope is de-scoped only when safe
 
-Removing an `if` or loop does not flatten a block when that would change the scope of `let`, `const`, function, or class declarations.
+Removing an `if` or loop can leave a bare block that exists only to scope `let`,
+`const`, function, or class declarations. By default `flag-prune` de-scopes such
+a block by hoisting its declarations into the parent block, but only when it is
+provably safe:
 
-```ts
-if (FLAG) {
-  const value = createValue()
-  use(value)
-}
-```
-
-When the branch is selected, the braces remain if they are needed to preserve lexical semantics.
-
-### Opt-in block de-scoping
-
-`flattenBlocks: true` (or `--flatten-blocks`) hoists a scoping block's
-declarations into the parent block, but only when it is provably safe:
-
-- None of the block's directly declared names already bind in the parent scope,
-  so hoisting cannot redeclare or shadow an existing binding.
+- None of the block's directly declared names already bind in the parent scope
+  or in a sibling statement, so hoisting cannot redeclare or shadow a binding.
 - None of those names are referenced anywhere outside the block, so hoisting
   cannot capture an outer reference.
+- The block contains no `using` or `await using` declaration, whose disposal is
+  tied to the block's scope.
 
-When either check fails, the block is left intact. The option is off by default
-because keeping the block is always safe.
+When any check fails, the block is left intact, and generated output is reparsed
+to guarantee it stays valid.
 
 ```ts
 if (FLAG) {
@@ -148,11 +139,21 @@ if (FLAG) {
 }
 ```
 
-With `FLAG` true and `flattenBlocks` enabled, this de-scopes to:
+With `FLAG` true, this de-scopes to:
 
 ```ts
 const access = await load()
 user = await resolve(access)
+```
+
+Set `flattenBlocks: false` or pass `--no-flatten-blocks` to keep the scoping
+block instead:
+
+```ts
+{
+  const access = await load()
+  user = await resolve(access)
+}
 ```
 
 ## Control flow is conservative
@@ -236,13 +237,13 @@ Reparsing is not a substitute for project checks. Run the repository's typecheck
 | Keep effectful constant conditions unchanged | `simplifyEffectfulConditions: false` | `--skip-effectful-conditions` |
 | Keep newly unused imports                    | `removeUnusedImports: false`         | `--no-remove-unused-imports`  |
 | Preserve all removed comments                | `commentPolicy: "preserve"`          | `--keep-comments`             |
+| Keep scoping blocks left by folding          | `flattenBlocks: false`               | `--no-flatten-blocks`         |
 | Skip output reparsing                        | `verify: { parse: false }`           | `--no-parse-check`            |
 
 Opt-in behavior that trades conservatism for a cleaner result:
 
 | Need                                    | Library option          | CLI option          |
 | --------------------------------------- | ----------------------- | ------------------- |
-| De-scope safe blocks left by folding    | `flattenBlocks: true`   | `--flatten-blocks`  |
 | Remove empty side-effect-free imports   | `removeSideEffectImports: true` | `--remove-side-effect-imports` |
 
 The default settings favor useful cleanup while preserving evaluation and module behavior.

@@ -464,8 +464,8 @@ const three = (flagA && !flagA) || flagB`
 })
 
 describe("control flow", () => {
-  it("preserves lexical block scope", () => {
-    const result = run("if (true) { const value = createValue(); consume(value) }")
+  it("preserves lexical block scope when de-scoping is disabled", () => {
+    const result = run("if (true) { const value = createValue(); consume(value) }", [], { flattenBlocks: false })
     expect(result.code).toBe("{ const value = createValue(); consume(value) }\n")
   })
 
@@ -505,7 +505,7 @@ describe("control flow", () => {
 describe("block de-scoping", () => {
   const flags = [{ identifier: "FLAG", value: true }]
 
-  it("keeps the scoping block by default", () => {
+  it("hoists declarations from a safe block by default", () => {
     const source = `function f() {
   let user
   if (FLAG) {
@@ -515,11 +515,12 @@ describe("block de-scoping", () => {
   return user
 }`
     const result = run(source, flags)
-    expect(result.code).toMatch(/\{\s*const access = load\(\)/)
-    expect(result.report.blocksFlattened).toBe(0)
+    expect(result.code).toContain("  const access = load()")
+    expect(result.code).not.toMatch(/\{\s*const access/)
+    expect(result.report.blocksFlattened).toBe(1)
   })
 
-  it("hoists declarations from a safe block when enabled", () => {
+  it("preserves the scoping block when de-scoping is disabled", () => {
     const source = `function f() {
   let user
   if (FLAG) {
@@ -528,10 +529,17 @@ describe("block de-scoping", () => {
   }
   return user
 }`
-    const result = run(source, flags, { flattenBlocks: true })
-    expect(result.code).toContain("  const access = load()")
-    expect(result.code).not.toMatch(/\{\s*const access/)
+    const result = run(source, flags, { flattenBlocks: false })
+    expect(result.code).toMatch(/\{\s*const access = load\(\)/)
+    expect(result.report.blocksFlattened).toBe(0)
+  })
+
+  it("emits valid output when hoisting statements without semicolons", () => {
+    const source = "function f() {\n  let u\n  if (FLAG) {\n    const a = load()\n    u = use(a)\n  }\n  return u\n}\n"
+    const result = run(source, flags)
     expect(result.report.blocksFlattened).toBe(1)
+    expect(result.code).toContain("u = use(a);")
+    expect(() => run(result.code, flags)).not.toThrow()
   })
 
   it("does not flatten when a declared name collides with an outer binding", () => {
@@ -543,7 +551,7 @@ describe("block de-scoping", () => {
   }
   return access
 }`
-    const result = run(source, flags, { flattenBlocks: true })
+    const result = run(source, flags)
     expect(result.report.blocksFlattened).toBe(0)
     expect(result.code).toMatch(/\{\s*const access = inner\(\)/)
   })
@@ -556,8 +564,17 @@ describe("block de-scoping", () => {
   }
   log(token)
 }`
-    const result = run(source, flags, { flattenBlocks: true })
+    const result = run(source, flags)
     expect(result.report.blocksFlattened).toBe(0)
+  })
+
+  it("keeps the second sibling block when hoisting would redeclare a name", () => {
+    const source = "if (FLAG) { const x = 1; }\nif (FLAG) { const x = 2; }\n"
+    const result = run(source, flags)
+    expect(result.report.blocksFlattened).toBe(1)
+    expect(result.code).toContain("const x = 1;")
+    expect(result.code).toMatch(/\{\s*const x = 2;?\s*\}/)
+    expect(() => run(result.code, flags)).not.toThrow()
   })
 
   it("keeps comments while flattening", () => {
@@ -566,7 +583,7 @@ describe("block de-scoping", () => {
   const access = load()
   run(access)
 }`
-    const result = run(source, flags, { flattenBlocks: true })
+    const result = run(source, flags)
     expect(result.code).toContain("// set up access")
     expect(result.code).toContain("const access = load()")
     expect(result.report.blocksFlattened).toBe(1)
@@ -581,8 +598,8 @@ describe("block de-scoping", () => {
   }
   return value
 }`
-    const once = run(source, flags, { flattenBlocks: true }).code
-    const twice = run(once, flags, { flattenBlocks: true }).code
+    const once = run(source, flags).code
+    const twice = run(once, flags).code
     expect(twice).toBe(once)
   })
 })

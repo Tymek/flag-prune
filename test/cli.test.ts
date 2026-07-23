@@ -266,15 +266,13 @@ describe("flag-prune process", () => {
     expect(result.stderr).toContain("--color must be auto, always, or never")
   })
 
-  it("de-scopes a safe block with --flatten-blocks", async () => {
+  it("de-scopes safe blocks by default and keeps them with --no-flatten-blocks", async () => {
     const cwd = await fixture()
-    await writeFile(
-      join(cwd, "input.ts"),
-      "function f() {\n  let user\n  if (FLAG) {\n    const access = load()\n    user = use(access)\n  }\n  return user\n}\n",
-    )
-    const kept = await invoke(["--set", "FLAG=true", "input.ts"], cwd)
+    const program = "function f() {\n  let user\n  if (FLAG) {\n    const access = load()\n    user = use(access)\n  }\n  return user\n}\n"
+    await writeFile(join(cwd, "input.ts"), program)
+    const kept = await invoke(["--set", "FLAG=true", "--no-flatten-blocks", "input.ts"], cwd)
     expect(kept.stdout).toContain("0 blocks de-scoped")
-    const flattened = await invoke(["--set", "FLAG=true", "--flatten-blocks", "--write", "input.ts"], cwd)
+    const flattened = await invoke(["--set", "FLAG=true", "--write", "input.ts"], cwd)
     expect(flattened).toMatchObject({ code: 0, stderr: "" })
     expect(flattened.stdout).toContain("1 block de-scoped")
     const written = await readFile(join(cwd, "input.ts"), "utf8")

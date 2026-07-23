@@ -453,18 +453,39 @@ function removeUnreachable(path: NodePath<t.Program | t.BlockStatement>, state: 
   }
 }
 
-function flattenableNames(block: t.BlockStatement): string[] {
-  const names: string[] = []
-  for (const statement of block.body) {
-    if (t.isVariableDeclaration(statement)) {
-      for (const declaration of statement.declarations) {
-        names.push(...Object.keys(t.getBindingIdentifiers(declaration.id)))
-      }
-    } else if ((t.isFunctionDeclaration(statement) || t.isClassDeclaration(statement)) && statement.id != null) {
-      names.push(statement.id.name)
+function statementDeclaredNames(statement: t.Statement): string[] {
+  if (t.isVariableDeclaration(statement)) {
+    const names: string[] = []
+    for (const declaration of statement.declarations) {
+      names.push(...Object.keys(t.getBindingIdentifiers(declaration.id)))
     }
+    return names
+  }
+  if ((t.isFunctionDeclaration(statement) || t.isClassDeclaration(statement)) && statement.id != null) {
+    return [statement.id.name]
+  }
+  return []
+}
+
+function flattenableNames(block: t.BlockStatement): string[] {
+  return block.body.flatMap(statementDeclaredNames)
+}
+
+/** Names declared directly by the parent's remaining statements, reflecting the current AST. */
+function siblingDeclaredNames(body: t.Statement[], block: t.BlockStatement): Set<string> {
+  const names = new Set<string>()
+  for (const statement of body) {
+    if (statement === block) continue
+    for (const name of statementDeclaredNames(statement)) names.add(name)
   }
   return names
+}
+
+/** A block whose disposal or hoisting scope would change if its declarations moved out. */
+function hasScopeSensitiveDeclaration(block: t.BlockStatement): boolean {
+  return block.body.some(
+    (statement) => t.isVariableDeclaration(statement) && (statement.kind === "using" || statement.kind === "await using"),
+  )
 }
 
 function referencedOutside(blockPath: NodePath<t.BlockStatement>, names: Set<string>): boolean {
@@ -489,20 +510,25 @@ function referencedOutside(blockPath: NodePath<t.BlockStatement>, names: Set<str
 /**
  * De-scope a bare block by hoisting its statements into the parent block when it
  * is provably safe: none of its directly declared names already bind in the
- * parent scope, and none are referenced outside the block.
+ * parent scope or in a sibling statement, and none are referenced outside the
+ * block.
  */
 function flattenBlock(path: NodePath<t.BlockStatement>, state: PassState): void {
   if (!state.options.flattenBlocks) return
   const parent = path.parentPath
   if ((!parent.isBlockStatement() && !parent.isProgram()) || !path.inList || path.listKey !== "body") return
+  if (hasScopeSensitiveDeclaration(path.node)) return
 
   const parentScope = path.scope.parent
   if (parentScope == null) return
   const names = flattenableNames(path.node)
-  for (const name of names) {
-    if (parentScope.hasBinding(name)) return
+  if (names.length > 0) {
+    const siblings = siblingDeclaredNames(parent.node.body, path.node)
+    for (const name of names) {
+      if (parentScope.hasBinding(name) || siblings.has(name)) return
+    }
+    if (referencedOutside(path, new Set(names))) return
   }
-  if (names.length > 0 && referencedOutside(path, new Set(names))) return
 
   const body = path.node.body
   if (body.length > 0) {
@@ -511,7 +537,10 @@ function flattenBlock(path: NodePath<t.BlockStatement>, state: PassState): void 
       body[0]!.leadingComments = [...leading, ...(body[0]!.leadingComments ?? [])]
     }
   }
-  path.replaceWithMultiple(body)
+  const hoisted = body.map((statement) =>
+    t.isExpressionStatement(statement) ? cloneMovedExpression(statement) : statement,
+  )
+  path.replaceWithMultiple(hoisted)
   state.changes += 1
   state.report.blocksFlattened += 1
 }

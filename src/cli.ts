@@ -87,9 +87,9 @@ Options:
                         Keep imports even after their flag binding is removed
       --remove-side-effect-imports
                         Delete empty flag imports known to be side-effect-free
-      --flatten-blocks
-                        De-scope safe blocks left by folding; hoists their
-                        declarations when no name collision can occur
+      --no-flatten-blocks
+                        Keep scoping blocks left by folding instead of safely
+                        de-scoping their declarations (de-scoping is the default)
       --skip-effectful-conditions
                         Leave constant conditions whose test still has effects
       --max-passes <n>  Cap simplification passes (default 20)
@@ -329,6 +329,7 @@ function parseArguments(args: string[]): CliArguments {
     else if (argument === "--json") result.json = true
     else if (argument === "--remove-side-effect-imports") result.removeSideEffectImports = true
     else if (argument === "--flatten-blocks") result.overrides.flattenBlocks = true
+    else if (argument === "--no-flatten-blocks") result.overrides.flattenBlocks = false
     else if (argument === "--no-remove-unused-imports") result.overrides.removeUnusedImports = false
     else if (argument === "--skip-effectful-conditions") result.overrides.simplifyEffectfulConditions = false
     else if (argument === "--no-parse-check") result.overrides.verify = { ...result.overrides.verify, parse: false }

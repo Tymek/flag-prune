@@ -173,7 +173,7 @@ interface TransformOptions {
 | `simplifyEffectfulConditions` | `true`      | Collapse constant conditions while retaining required condition effects.             |
 | `removeUnusedImports`         | `true`      | Remove import bindings made unused by the transform.                                 |
 | `removeSideEffectImports`     | `false`     | Remove the final empty configured import instead of retaining module initialization. |
-| `flattenBlocks`               | `false`     | De-scope blocks left by folding when hoisting their declarations is provably safe.   |
+| `flattenBlocks`               | `true`      | De-scope blocks left by folding when hoisting their declarations is provably safe.   |
 | `commentPolicy`               | `"report"`  | Handle comments in removed code.                                                     |
 | `maxPasses`                   | `20`        | Maximum simplification passes before reporting non-convergence.                      |
 | `solverVariableLimit`         | `8`         | Variable limit for bounded pure propositional simplification.                        |

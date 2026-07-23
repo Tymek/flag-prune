@@ -135,8 +135,10 @@ describe("goal: control flow", () => {
     expect(run(source).code).toBe(expected)
   })
 
-  it("keeps lexical branch scope", () => {
-    expect(run("if (true) { const value = createValue(); consume(value) }").code).toMatch(/^\{[\s\n]/)
+  it("de-scopes a safe branch block by default and preserves it on request", () => {
+    const source = "if (true) { const value = createValue(); consume(value) }"
+    expect(run(source).code).toBe("const value = createValue();consume(value);\n")
+    expect(run(source, [], { flattenBlocks: false }).code).toMatch(/^\{[\s\n]/)
   })
 
   it("propagates return and throw and removes following code", () => {
@@ -179,9 +181,10 @@ describe("goal: JSX and loops", () => {
     expect(run("do { work() } while (false)").code).toBe("work();\n")
   })
 
-  it("retains lexical for-initializer scope and condition order", () => {
-    const result = run("for (let item = initialize(); (check(), false); update()) work()")
-    expect(result.code).toBe("{\n  let item = initialize()\n  check();\n}\n")
+  it("de-scopes a safe for-initializer by default and preserves it on request", () => {
+    const source = "for (let item = initialize(); (check(), false); update()) work()"
+    expect(run(source).code).toBe("let item = initialize()\ncheck();\n")
+    expect(run(source, [], { flattenBlocks: false }).code).toBe("{\n  let item = initialize()\n  check();\n}\n")
   })
 
   it("does not rewrite do-while loops containing loop control", () => {
