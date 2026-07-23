@@ -66,9 +66,10 @@ describe("flag-prune process", () => {
   it("prints help and version", async () => {
     const help = await invoke(["--help"])
     const version = await invoke(["--version"])
+    const expectedVersion = JSON.parse(await readFile(resolve("package.json"), "utf8")).version as string
     expect(help).toMatchObject({ code: 0, stderr: "" })
     expect(help.stdout).toContain("Usage: flag-prune")
-    expect(version).toMatchObject({ code: 0, stdout: "1.0.0\n", stderr: "" })
+    expect(version).toMatchObject({ code: 0, stdout: `${expectedVersion}\n`, stderr: "" })
   })
 
   it("guides a bare command through one question at a time", async () => {

@@ -1,4 +1,4 @@
-import { realpathSync, writeSync } from "node:fs"
+import { readFileSync, realpathSync, writeSync } from "node:fs"
 import { chmod, readFile, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises"
 import { dirname, extname, join, relative, resolve } from "node:path"
 import { createInterface } from "node:readline"
@@ -10,9 +10,20 @@ import { validateConfig } from "./config.js"
 import { transform } from "./transform.js"
 import type { FlagCleanConfig, FlagDefinition, FlagValue, TransformReport } from "./types.js"
 
-const VERSION = "1.0.0"
+const VERSION = readVersion()
 const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"])
 const IGNORED_DIRECTORIES = new Set([".git", "node_modules", "dist", "coverage"])
+
+/** Read the package version from package.json next to the built entry point. */
+function readVersion(): string {
+  try {
+    const contents = readFileSync(new URL("../package.json", import.meta.url), "utf8")
+    const version = (JSON.parse(contents) as { version?: unknown }).version
+    return typeof version === "string" ? version : "0.0.0"
+  } catch {
+    return "0.0.0"
+  }
+}
 
 interface CliArguments {
   directFlags: FlagDefinition[]
