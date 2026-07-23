@@ -64,7 +64,7 @@ Safely replace configured feature flags and remove dead code.
 
 Quick start:
   npx flag-prune
-  npx flag-prune --set hasFeature.newAccess src
+  npx flag-prune --set flagClient.feature src
   npx flag-prune --set 'useFlag("new-access")=false' --write src
 
   Run with no options to start a guided setup. After the preview, you can
