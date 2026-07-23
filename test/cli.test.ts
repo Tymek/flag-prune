@@ -186,7 +186,7 @@ describe("flag-prune process", () => {
     expect(result.stderr).toContain("unknown option: --wat")
   })
 
-  it("runs without a config for a direct member flag", async () => {
+  it("runs for a direct member flag", async () => {
     const cwd = await fixture()
     await writeFile(
       join(cwd, "input.ts"),
@@ -196,6 +196,28 @@ describe("flag-prune process", () => {
     expect(result.code).toBe(0)
     expect(result.stdout).not.toContain("--- a/input.ts")
     expect(result.stderr).toBe("")
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
+  })
+
+  it("replaces a process.env flag", async () => {
+    const cwd = await fixture()
+    await writeFile(
+      join(cwd, "input.ts"),
+      "if (process.env.FEATURE_FLAG) yes(); else no();\n",
+    )
+    const preview = await invoke(
+      ["--flag", "process.env.FEATURE_FLAG=true", "input.ts"],
+      cwd,
+    )
+    expect(preview).toMatchObject({ code: 0, stderr: "" })
+    expect(preview.stdout).toContain("1 flag replaced")
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toContain("process.env.FEATURE_FLAG")
+
+    const result = await invoke(
+      ["--flag", "process.env.FEATURE_FLAG=true", "--write", "input.ts"],
+      cwd,
+    )
+    expect(result).toMatchObject({ code: 0, stderr: "" })
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
   })
 
