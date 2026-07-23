@@ -1,38 +1,16 @@
-# flag-prune
+# `flag-prune`
 
-`flag-prune` is a conservative JS/TS/JSX/TSX codemod for removing feature flags. It replaces configured flag reads with their known values, folds expressions to a fixed point, removes dead control flow, preserves required evaluation and side effects, cleans configured imports, reparses the output, and reports every transformation.
+A JS/TS(X) codemod for removing feature flags. Replace configured flag reads with their known values, fold expressions to a fixed point, remove dead control flow, all while preserving required evaluation and side effects.
 
 ## Run without installing
 
-```sh
-npx flag-prune --flag hasFeature.newAccessControl src
-```
-
-This previews the diff without touching files. Apply it after review:
+Run in interactive mode:
 
 ```sh
-npx flag-prune --flag hasFeature.newAccessControl=true --write src
+npx flag-prune
 ```
 
-> **A rule with no `=value` defaults to `true`.** `--flag hasFeature.x` is the
-> same as `--flag hasFeature.x=true` and removes the *disabled* branch. Always
-> pass `=false` explicitly when you are turning a flag off.
-
-Equivalent one-off runners:
-
-```sh
-pnpm dlx flag-prune --flag hasFeature.newAccessControl=true src
-yarn dlx flag-prune --flag hasFeature.newAccessControl=true src
-bunx flag-prune --flag hasFeature.newAccessControl=true src
-```
-
-Imported flags use `module#export.path=value`:
-
-```sh
-npx flag-prune --flag ./features#hasFeature.newAccessControl=true --write src
-```
-
-This leaves a bare `import "./features"` to preserve module initialization. Add `--remove-side-effect-imports` only when that module is proven side-effect-free.
+Run `npx flag-prune --help` to see every option.
 
 ## Function and method calls
 
@@ -69,54 +47,7 @@ if (enabled) {
 
 With `'useFlag("new-access")=false'`, this becomes `showLegacyAccess();`; the now-unused `enabled` binding is removed. Imported functions are matched through aliases and local shadowing is not changed.
 
-Repeat `--flag` for related flags. For reusable migrations or verification settings, create `flag-prune.config.json`:
-
-```json
-{
-  "flags": [
-    {
-      "module": "./features",
-      "export": "hasFeature",
-      "path": ["newAccessControl"]
-    },
-    {
-      "module": "./features",
-      "call": "featureClient.isEnabled",
-      "arguments": ["legacy-export"],
-      "value": false
-    }
-  ],
-  "simplifyEffectfulConditions": true,
-  "removeUnusedImports": true,
-  "commentPolicy": "report",
-  "verify": {
-    "parse": true,
-    "typecheck": false,
-    "lint": false,
-    "tests": false
-  }
-}
-```
-
-With the default config filename, the CLI finds it automatically:
-
-```sh
-npx flag-prune src
-```
-
-Write atomically and run project checks:
-
-```sh
-npx flag-prune --write --typecheck --lint --test src
-```
-
-Verification commands run after the files are written; if any check fails the
-writes are rolled back. Verification also works on a dry run (without `--write`)
-by applying the change transiently and restoring the source afterward.
-
-> **Security:** `verify.typecheck`, `verify.lint`, and `verify.tests` are run
-> through a shell. A checked-in `flag-prune.config.json` therefore executes
-> arbitrary commands — review it like any other build script before running.
+Repeat `--flag` for related flags.
 
 ## CLI reference
 
@@ -125,7 +56,6 @@ Common options (`--help` lists them all):
 | Option | Effect |
 | --- | --- |
 | `-f, --flag <rule>` | Flag rule; repeatable; also `-f=RULE` |
-| `-c, --config <path>` | JSON config; auto-detected and merged with `--flag` |
 | `-w, --write` / `--dry-run` | Write atomically / preview only (default) |
 | `--check` | Exit 1 when files would change |
 | `--strict` | Exit 2 when any warning is emitted |

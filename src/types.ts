@@ -31,9 +31,6 @@ export type CommentPolicy = "report" | "preserve" | "discard"
 
 export interface VerificationConfig {
   parse?: boolean
-  typecheck?: boolean | string
-  lint?: boolean | string
-  tests?: boolean | string
 }
 
 export interface FlagCleanConfig {

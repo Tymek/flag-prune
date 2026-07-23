@@ -2,7 +2,9 @@ import { spawn } from "node:child_process"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import { PassThrough, Readable } from "node:stream"
 import { afterEach, describe, expect, it } from "vitest"
+import { runCli } from "../src/cli.js"
 
 const temporaryDirectories: string[] = []
 
@@ -10,7 +12,10 @@ afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })))
 })
 
-function invoke(args: string[], cwd = resolve(".")): Promise<{ code: number | null; stdout: string; stderr: string }> {
+function invoke(
+  args: string[],
+  cwd = resolve("."),
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(process.execPath, [resolve("dist/cli.js"), ...args], { cwd })
     let stdout = ""
@@ -22,13 +27,33 @@ function invoke(args: string[], cwd = resolve(".")): Promise<{ code: number | nu
   })
 }
 
+async function invokeGuided(
+  input: string,
+  cwd: string,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  let stdout = ""
+  let stderr = ""
+  const code = await runCli([], {
+    cwd,
+    env: {},
+    stdin: Readable.from([input]),
+    stdout: { write: (value) => (stdout += value) },
+    stderr: { write: (value) => (stderr += value) },
+  })
+  return { code, stdout, stderr }
+}
+
+async function waitForOutput(readOutput: () => string, text: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (readOutput().includes(text)) return
+    await new Promise<void>((resolvePromise) => setImmediate(resolvePromise))
+  }
+  throw new Error(`Timed out waiting for CLI output: ${text}`)
+}
+
 async function fixture(): Promise<string> {
   const cwd = await mkdtemp(join(tmpdir(), "flag-prune-cli-"))
   temporaryDirectories.push(cwd)
-  await writeFile(
-    join(cwd, "flags.json"),
-    JSON.stringify({ flags: [{ identifier: "FLAG", value: true }] }),
-  )
   await writeFile(join(cwd, "input.ts"), "if (FLAG) yes(); else no();\n")
   return cwd
 }
@@ -42,28 +67,114 @@ describe("flag-prune process", () => {
     expect(version).toMatchObject({ code: 0, stdout: "1.0.0\n", stderr: "" })
   })
 
+  it("guides a bare command through one question at a time", async () => {
+    const cwd = await fixture()
+    const stdin = new PassThrough()
+    let stdout = ""
+    let stderr = ""
+    const result = runCli([], {
+      cwd,
+      env: {},
+      stdin,
+      stdout: { write: (value) => (stdout += value) },
+      stderr: { write: (value) => (stderr += value) },
+    })
+
+    await waitForOutput(() => stdout, "What flag would you like to remove?")
+    expect(stdout).toContain("npx flag-prune --help")
+    expect(stdout).not.toContain("What value should replace this flag?")
+    stdin.write("FLAG\n")
+
+    await waitForOutput(() => stdout, "What value should replace this flag?")
+    expect(stdout).not.toContain("Where should flag-prune look?")
+    stdin.write("\n")
+
+    await waitForOutput(() => stdout, "Where should flag-prune look?")
+    stdin.write("\n")
+
+    await waitForOutput(() => stdout, "Write these changes? [y/N]:")
+    expect(stdout.indexOf("Write these changes?")).toBeGreaterThan(stdout.indexOf("1 flag replaced"))
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toContain("if (FLAG)")
+    stdin.end("\n")
+
+    expect(await result).toBe(0)
+    expect(stderr).toBe("")
+    expect(stdout).toContain("--- a/input.ts\tbefore")
+    expect(stdout).toContain("1 flag replaced")
+    expect(stdout).toContain("After writing these changes, run your project's typecheck, lint, and tests.")
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toContain("if (FLAG)")
+  })
+
+  it("writes a guided preview only after confirmation", async () => {
+    const cwd = await fixture()
+    const result = await invokeGuided("FLAG\n\ninput.ts\ny\n", cwd)
+
+    expect(result).toMatchObject({ code: 0, stderr: "" })
+    expect(result.stdout).toContain("Write these changes? [y/N]:")
+    expect(result.stdout).toContain("Changes written to 1 file.")
+    expect(result.stdout).toContain("Next: run your project's typecheck, lint, and tests.")
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
+  })
+
+  it("does not start guided setup when CI=true", async () => {
+    const cwd = await fixture()
+    let stdout = ""
+    let stderr = ""
+    const code = await runCli([], {
+      cwd,
+      env: { CI: "true" },
+      stdin: Readable.from([]),
+      stdout: { write: (value) => (stdout += value) },
+      stderr: { write: (value) => (stderr += value) },
+    })
+
+    expect(code).toBe(2)
+    expect(stdout).not.toContain("What flag would you like to remove?")
+    expect(stdout).not.toContain("Write these changes?")
+    expect(stderr).toContain("no arguments provided in CI environment")
+  })
+
+  it("accepts text and number values in guided setup", async () => {
+    const cwd = await fixture()
+    await writeFile(
+      join(cwd, "input.ts"),
+      'if (readTier() === "pro" && limits.maxSeats === 25) yes(); else no();\n',
+    )
+
+    const text = await invokeGuided("readTier()\npro\ninput.ts\n\n", cwd)
+    const number = await invokeGuided("limits.maxSeats\n25\ninput.ts\n\n", cwd)
+
+    expect(text).toMatchObject({ code: 0, stderr: "" })
+    expect(text.stdout).toContain("readTier()")
+    expect(text.stdout).toContain("+if (limits.maxSeats === 25) yes(); else no();")
+    expect(number).toMatchObject({ code: 0, stderr: "" })
+    expect(number.stdout).toContain('+if (readTier() === "pro") yes(); else no();')
+  })
+
   it("prints a dry-run diff without changing files", async () => {
     const cwd = await fixture()
-    const result = await invoke(["--config", "flags.json", "input.ts"], cwd)
+    const result = await invoke(["--flag", "FLAG", "input.ts"], cwd)
     expect(result.code).toBe(0)
     expect(result.stdout).toContain("--- a/input.ts\tbefore")
     expect(result.stdout).toContain("1 flag replaced")
+    expect(result.stdout).toContain("After writing these changes, run your project's typecheck, lint, and tests.")
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toContain("if (FLAG)")
   })
 
   it("writes atomically and becomes a no-op on the second run", async () => {
     const cwd = await fixture()
-    const first = await invoke(["--config", "flags.json", "--write", "--no-diff", "input.ts"], cwd)
-    const second = await invoke(["--config", "flags.json", "--write", "--no-diff", "input.ts"], cwd)
+    const first = await invoke(["--flag", "FLAG", "--write", "--no-diff", "input.ts"], cwd)
+    const second = await invoke(["--flag", "FLAG", "--write", "--no-diff", "input.ts"], cwd)
     expect(first.code).toBe(0)
     expect(first.stdout).toContain("1 file changed")
+    expect(first.stdout).toContain("Next: run your project's typecheck, lint, and tests.")
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
     expect(second.stdout).toContain("0 files changed")
   })
 
   it("supports CI check and JSON reports", async () => {
     const cwd = await fixture()
-    const result = await invoke(["--config", "flags.json", "--check", "--json", "input.ts"], cwd)
+    const result = await invoke(["--flag", "FLAG", "--check", "--json", "input.ts"], cwd)
     expect(result.code).toBe(1)
     const output = JSON.parse(result.stdout) as { report: { filesChanged: number; flagsReplaced: number } }
     expect(output.report).toMatchObject({ filesChanged: 1, flagsReplaced: 1 })
@@ -180,52 +291,53 @@ describe("flag-prune process", () => {
     expect(result.stdout).toContain("2 flags replaced")
   })
 
-  it("auto-loads flag-prune.config.json when direct flags are absent", async () => {
-    const cwd = await fixture()
-    await writeFile(join(cwd, "flag-prune.config.json"), await readFile(join(cwd, "flags.json")))
-    const result = await invoke(["--write", "input.ts"], cwd)
-    expect(result.code).toBe(0)
-    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
-  })
-
-  it("explains how to configure a missing flag", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "flag-prune-cli-"))
-    temporaryDirectories.push(cwd)
-    await writeFile(join(cwd, "input.ts"), "work()\n")
-    const result = await invoke(["input.ts"], cwd)
-    expect(result.code).toBe(2)
-    expect(result.stderr).toContain("use --flag NAME.path[=true|false] or --config <path>")
-  })
-
-  it("merges an auto-detected config with direct flags", async () => {
+  it("does not load flag-prune.config.json", async () => {
     const cwd = await fixture()
     await writeFile(
       join(cwd, "flag-prune.config.json"),
       JSON.stringify({ flags: [{ identifier: "FLAG", value: true }] }),
     )
-    await writeFile(join(cwd, "input.ts"), "if (FLAG && OTHER) yes(); else no();\n")
-    const result = await invoke(["--flag", "OTHER=true", "--write", "input.ts"], cwd)
-    expect(result).toMatchObject({ code: 0, stderr: "" })
-    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
+    const result = await invoke(["--write", "input.ts"], cwd)
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain("no flags provided")
+    expect(await readFile(join(cwd, "input.ts"), "utf8")).toContain("if (FLAG)")
+  })
+
+  it("explains how to provide a missing flag", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "flag-prune-cli-"))
+    temporaryDirectories.push(cwd)
+    await writeFile(join(cwd, "input.ts"), "work()\n")
+    const result = await invoke(["input.ts"], cwd)
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain("use --flag NAME.path[=value]")
+  })
+
+  it("rejects removed config options", async () => {
+    const cwd = await fixture()
+    const long = await invoke(["--config", "flags.json", "input.ts"], cwd)
+    const short = await invoke(["-c=flags.json", "input.ts"], cwd)
+    expect(long.code).toBe(2)
+    expect(long.stderr).toContain("unknown option: --config")
+    expect(short.code).toBe(2)
+    expect(short.stderr).toContain("unknown option: -c=flags.json")
   })
 
   it("skips declaration files", async () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "types.d.ts"), "export declare const FLAG: boolean;\n")
-    const result = await invoke(["--config", "flags.json", "--write", "types.d.ts"], cwd)
+    const result = await invoke(["--flag", "FLAG", "--write", "types.d.ts"], cwd)
     expect(result).toMatchObject({ code: 0 })
-    expect(result.stderr).toContain("no JavaScript or TypeScript files found")
+    expect(result.stderr).toContain("no files found")
     expect(await readFile(join(cwd, "types.d.ts"), "utf8")).toBe("export declare const FLAG: boolean;\n")
   })
 
   it("treats an empty target set as a benign no-op", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "flag-prune-cli-"))
     temporaryDirectories.push(cwd)
-    await writeFile(join(cwd, "flags.json"), JSON.stringify({ flags: [{ identifier: "FLAG" }] }))
     await writeFile(join(cwd, "notes.md"), "# not source\n")
-    const result = await invoke(["--config", "flags.json", "notes.md"], cwd)
+    const result = await invoke(["--flag", "FLAG", "notes.md"], cwd)
     expect(result.code).toBe(0)
-    expect(result.stderr).toContain("no JavaScript or TypeScript files found")
+    expect(result.stderr).toContain("no files found")
   })
 
   it("warns about and skips nested symlinks and honors --ignore", async () => {
@@ -235,14 +347,14 @@ describe("flag-prune process", () => {
     await mkdir(join(cwd, "vendor"))
     await writeFile(join(cwd, "vendor", "input.ts"), "if (FLAG) yes(); else no();\n")
     await symlink(join(cwd, "input.ts"), join(cwd, "linked.ts"))
-    const result = await invoke(["--config", "flags.json", "--ignore", "vendor", "--write", "."], cwd)
+    const result = await invoke(["--flag", "FLAG", "--ignore", "vendor", "--write", "."], cwd)
     expect(result.code).toBe(0)
     expect(result.stderr).toContain("skipped symlink")
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe("yes();\n")
     expect(await readFile(join(cwd, "vendor", "input.ts"), "utf8")).toBe("if (FLAG) yes(); else no();\n")
   })
 
-  it("accepts inline -f= and -c= forms", async () => {
+  it("accepts the inline -f= form", async () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "input.ts"), "if (hasFeature.newUi) yes(); else no();\n")
     const result = await invoke(["-f=hasFeature.newUi=true", "--write", "input.ts"], cwd)
@@ -259,7 +371,7 @@ describe("flag-prune process", () => {
   it("exposes comment policy through the CLI", async () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "input.ts"), "if (FLAG) {\n  // keep me\n  yes();\n} else no();\n")
-    const result = await invoke(["--config", "flags.json", "--keep-comments", "--write", "input.ts"], cwd)
+    const result = await invoke(["--flag", "FLAG", "--keep-comments", "--write", "input.ts"], cwd)
     expect(result.code).toBe(0)
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toContain("// keep me")
   })
@@ -284,32 +396,12 @@ describe("flag-prune process", () => {
     expect(await readFile(join(cwd, "input.ts"), "utf8")).toContain('import { FLAG } from "./flags"')
   })
 
-  it("rolls back written changes when verification fails", async () => {
+  it("rejects removed external verification options", async () => {
     const cwd = await fixture()
-    const original = "if (FLAG) yes(); else no();\n"
-    await writeFile(join(cwd, "input.ts"), original)
-    await writeFile(
-      join(cwd, "flags.json"),
-      JSON.stringify({ flags: [{ identifier: "FLAG", value: true }], verify: { typecheck: "grep -q FLAG input.ts" } }),
-    )
-    const result = await invoke(["--config", "flags.json", "--write", "--no-diff", "input.ts"], cwd)
-    expect(result.code).toBe(2)
-    expect(result.stderr).toContain("rolled back written changes")
-    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe(original)
-  })
+    const option = await invoke(["--flag", "FLAG", "--typecheck", "input.ts"], cwd)
 
-  it("verifies transformed output on a dry run and restores the source", async () => {
-    const cwd = await fixture()
-    const original = "if (FLAG) yes(); else no();\n"
-    await writeFile(join(cwd, "input.ts"), original)
-    await writeFile(
-      join(cwd, "flags.json"),
-      JSON.stringify({ flags: [{ identifier: "FLAG", value: true }], verify: { typecheck: "! grep -q FLAG input.ts" } }),
-    )
-    const result = await invoke(["--config", "flags.json", "--no-diff", "input.ts"], cwd)
-    expect(result.code).toBe(0)
-    expect(result.stderr).toContain("verifying transformed output without persisting")
-    expect(await readFile(join(cwd, "input.ts"), "utf8")).toBe(original)
+    expect(option.code).toBe(2)
+    expect(option.stderr).toContain("unknown option: --typecheck")
   })
 
   it("preserves a symlink target when writing through it", async () => {
@@ -317,7 +409,7 @@ describe("flag-prune process", () => {
     const { lstat, symlink } = await import("node:fs/promises")
     await writeFile(join(cwd, "real.ts"), "if (FLAG) yes(); else no();\n")
     await symlink(join(cwd, "real.ts"), join(cwd, "link.ts"))
-    const result = await invoke(["--config", "flags.json", "--write", "--no-diff", "link.ts"], cwd)
+    const result = await invoke(["--flag", "FLAG", "--write", "--no-diff", "link.ts"], cwd)
     expect(result.code).toBe(0)
     expect((await lstat(join(cwd, "link.ts"))).isSymbolicLink()).toBe(true)
     expect(await readFile(join(cwd, "real.ts"), "utf8")).toBe("yes();\n")
@@ -340,7 +432,7 @@ describe("flag-prune process", () => {
     await writeFile(join(cwd, "input.ts"), "if (FLAG) yes(); else no();\n")
     const { symlink } = await import("node:fs/promises")
     await symlink(join(cwd, "input.ts"), join(cwd, "linked.ts"))
-    const result = await invoke(["--config", "flags.json", "--strict", "--no-diff", "."], cwd)
+    const result = await invoke(["--flag", "FLAG", "--strict", "--no-diff", "."], cwd)
     expect(result.code).toBe(2)
     expect(result.stderr).toContain("skipped symlink")
   })
@@ -360,15 +452,15 @@ describe("flag-prune process", () => {
     const cwd = await fixture()
     await writeFile(join(cwd, "good.ts"), "if (FLAG) yes(); else no();\n")
     await writeFile(join(cwd, "broken.ts"), "const x = {\n")
-    const result = await invoke(["--config", "flags.json", "--write", "--no-diff", "."], cwd)
+    const result = await invoke(["--flag", "FLAG", "--write", "--no-diff", "."], cwd)
     expect(result.code).toBe(0)
     expect(result.stderr).toContain("skipped")
     expect(result.stderr).toContain("broken.ts")
     expect(await readFile(join(cwd, "good.ts"), "utf8")).toBe("yes();\n")
     expect(await readFile(join(cwd, "broken.ts"), "utf8")).toBe("const x = {\n")
-    const strict = await invoke(["--config", "flags.json", "--no-diff", "."], cwd)
+    const strict = await invoke(["--flag", "FLAG", "--no-diff", "."], cwd)
     expect(strict.code).toBe(0)
-    const strictFail = await invoke(["--config", "flags.json", "--strict", "--no-diff", "."], cwd)
+    const strictFail = await invoke(["--flag", "FLAG", "--strict", "--no-diff", "."], cwd)
     expect(strictFail.code).toBe(2)
   })
 })

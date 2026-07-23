@@ -24,7 +24,7 @@ const ALLOWED_CONFIG_KEYS = new Set([
   "verify",
   "filename",
 ])
-const ALLOWED_VERIFY_KEYS = new Set(["parse", "typecheck", "lint", "tests"])
+const ALLOWED_VERIFY_KEYS = new Set(["parse"])
 
 function validateFlag(flag: unknown, index: number): FlagDefinition {
   if (typeof flag !== "object" || flag === null || Array.isArray(flag)) {
@@ -101,6 +101,10 @@ export function validateConfig(input: unknown): FlagCleanConfig {
     }
     for (const key of Object.keys(value.verify as Record<string, unknown>)) {
       if (!ALLOWED_VERIFY_KEYS.has(key)) fail(`verify has unknown key "${key}"`)
+    }
+    const verify = value.verify as Record<string, unknown>
+    if (verify.parse !== undefined && typeof verify.parse !== "boolean") {
+      fail("verify.parse must be boolean")
     }
   }
 

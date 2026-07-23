@@ -29,12 +29,8 @@ try {
   await run(process.execPath, ["use.mjs"], { cwd: consumer })
 
   await writeFile(join(consumer, "input.js"), "if (FLAG) yes(); else no()\n")
-  await writeFile(
-    join(consumer, "flags.json"),
-    JSON.stringify({ flags: [{ identifier: "FLAG", value: false }] }),
-  )
   const cli = join(consumer, "node_modules", ".bin", process.platform === "win32" ? "flag-prune.cmd" : "flag-prune")
-  const cliResult = await run(cli, ["--config", "flags.json", "--write", "input.js"], { cwd: consumer })
+  const cliResult = await run(cli, ["--flag", "FLAG=false", "--write", "input.js"], { cwd: consumer })
   assert.match(cliResult.stdout, /1 flag replaced/)
   assert.equal(await readFile(join(consumer, "input.js"), "utf8"), "no();\n")
 

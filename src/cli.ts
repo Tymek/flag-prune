@@ -1,21 +1,20 @@
-import { spawn } from "node:child_process"
-import { constants as fsConstants, realpathSync, writeSync } from "node:fs"
-import { access, chmod, readFile, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises"
+import { realpathSync, writeSync } from "node:fs"
+import { chmod, readFile, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises"
 import { dirname, extname, join, relative, resolve } from "node:path"
+import { createInterface } from "node:readline"
 import { fileURLToPath } from "node:url"
 import { parseExpression } from "@babel/parser"
 import * as t from "@babel/types"
 import { createTwoFilesPatch } from "diff"
 import { validateConfig } from "./config.js"
 import { transform } from "./transform.js"
-import type { FlagCleanConfig, FlagDefinition, FlagValue, TransformReport, VerificationConfig } from "./types.js"
+import type { FlagCleanConfig, FlagDefinition, FlagValue, TransformReport } from "./types.js"
 
 const VERSION = "1.0.0"
 const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"])
 const IGNORED_DIRECTORIES = new Set([".git", "node_modules", "dist", "coverage"])
 
 interface CliArguments {
-  configPath: string | undefined
   directFlags: FlagDefinition[]
   write: boolean
   check: boolean
@@ -28,7 +27,6 @@ interface CliArguments {
   ignore: string[]
   strict: boolean
   overrides: Partial<FlagCleanConfig>
-  verification: { typecheck: boolean; lint: boolean; tests: boolean }
   targets: string[]
 }
 
@@ -42,6 +40,8 @@ interface FileResult {
 
 export interface CliIo {
   cwd: string
+  env?: NodeJS.ProcessEnv
+  stdin?: NodeJS.ReadableStream
   stdout: { write(value: string): unknown }
   stderr: { write(value: string): unknown }
 }
@@ -51,8 +51,12 @@ const HELP = `Usage: flag-prune [options] <file-or-directory...>
 Safely replace configured feature flags and remove dead code.
 
 Quick start:
+  npx flag-prune
   npx flag-prune --flag hasFeature.newAccess src
   npx flag-prune --flag 'useFlag("new-access")=false' --write src
+
+  Run with no options to start a guided setup. After the preview, you can
+  choose whether to write the changes. Guided setup is disabled when CI=true.
 
 Flag rule syntax (repeat --flag for multiple rules):
   NAME.path[=value]               local/global identifier or member access
@@ -65,7 +69,6 @@ Flag rule syntax (repeat --flag for multiple rules):
 
 Options:
   -f, --flag <rule>    Flag rule (also -f=RULE / --flag=RULE)
-  -c, --config <path>  JSON config (auto-detected and merged with --flag)
   -w, --write          Write changes atomically
       --dry-run        Preview only; never write (default; conflicts with -w)
       --check          Exit 1 when files would change
@@ -85,9 +88,6 @@ Options:
                         Leave constant conditions whose test still has effects
       --max-passes <n>  Cap simplification passes (default 20)
       --no-parse-check  Skip reparsing the generated output
-      --typecheck      Run configured/default typecheck (rolls back on failure)
-      --lint           Run configured/default lint (rolls back on failure)
-      --test           Run configured/default tests (rolls back on failure)
   -h, --help           Show help
   -v, --version        Show version
 
@@ -224,7 +224,6 @@ function parseDirectFlag(rule: string): FlagDefinition {
 
 function parseArguments(args: string[]): CliArguments {
   const result: CliArguments = {
-    configPath: undefined,
     directFlags: [],
     write: false,
     check: false,
@@ -237,7 +236,6 @@ function parseArguments(args: string[]): CliArguments {
     ignore: [],
     strict: false,
     overrides: {},
-    verification: { typecheck: false, lint: false, tests: false },
     targets: [],
   }
   let dryRun = false
@@ -247,14 +245,7 @@ function parseArguments(args: string[]): CliArguments {
       result.targets.push(...args.slice(index + 1))
       break
     }
-    if (argument === "-c" || argument === "--config") {
-      result.configPath = requireValue(args, index, argument)
-      index += 1
-    } else if (argument.startsWith("--config=")) {
-      result.configPath = argument.slice("--config=".length)
-    } else if (argument.startsWith("-c=")) {
-      result.configPath = argument.slice("-c=".length)
-    } else if (argument === "-f" || argument === "--flag") {
+    if (argument === "-f" || argument === "--flag") {
       result.directFlags.push(parseDirectFlag(requireValue(args, index, argument)))
       index += 1
     } else if (argument.startsWith("--flag=")) {
@@ -296,10 +287,7 @@ function parseArguments(args: string[]): CliArguments {
       index += 1
     } else if (argument.startsWith("--ignore=")) {
       result.ignore.push(argument.slice("--ignore=".length))
-    } else if (argument === "--typecheck") result.verification.typecheck = true
-    else if (argument === "--lint") result.verification.lint = true
-    else if (argument === "--test") result.verification.tests = true
-    else if (argument === "-h" || argument === "--help") result.help = true
+    } else if (argument === "-h" || argument === "--help") result.help = true
     else if (argument === "-v" || argument === "--version") result.version = true
     else if (argument.startsWith("-")) throw new Error(`unknown option: ${argument}`)
     else result.targets.push(argument)
@@ -308,6 +296,93 @@ function parseArguments(args: string[]): CliArguments {
   if (result.json) result.diff = false
   else if (result.write && !result.diffExplicit) result.diff = false
   return result
+}
+
+interface InteractiveSession {
+  ask(question: string): Promise<string>
+  close(): void
+}
+
+function createInteractiveSession(io: CliIo): InteractiveSession {
+  const readline = createInterface({
+    input: io.stdin ?? process.stdin,
+    terminal: false,
+  })
+  const queuedAnswers: string[] = []
+  let inputEnded = false
+  let pendingAnswer: ((answer: string | undefined) => void) | undefined
+  readline.on("line", (answer) => {
+    if (pendingAnswer !== undefined) {
+      const resolveAnswer = pendingAnswer
+      pendingAnswer = undefined
+      resolveAnswer(answer)
+    } else {
+      queuedAnswers.push(answer)
+    }
+  })
+  readline.on("close", () => {
+    inputEnded = true
+    pendingAnswer?.(undefined)
+    pendingAnswer = undefined
+  })
+  return {
+    ask: async (question) => {
+      io.stdout.write(question)
+      let answer = queuedAnswers.shift()
+      if (answer === undefined && !inputEnded) {
+        answer = await new Promise<string | undefined>((resolveAnswer) => {
+          pendingAnswer = resolveAnswer
+        })
+      }
+      if (answer === undefined) throw new Error("interactive setup ended before all questions were answered")
+      return answer.trim()
+    },
+    close: () => readline.close(),
+  }
+}
+
+async function runInteractiveSetup(
+  parsed: CliArguments,
+  io: CliIo,
+  session: InteractiveSession,
+): Promise<void> {
+  io.stdout.write("Tip: Run `npx flag-prune --help` to see all options.\n\n")
+  const selector = await session.ask(
+    "What flag would you like to remove?\n" +
+    "Enter a name like hasFeature.newAccess or useFlag(\"new-access\").\n" +
+    "Flag: ",
+  )
+  if (selector === "") throw new Error("please enter a flag to remove")
+
+  const rawValue = await session.ask(
+    "\nWhat value should replace this flag?\n" +
+    "Press Enter to use true. You can also enter false, a number like 3, or text like beta.\n" +
+    "Value [true]: ",
+  )
+  const flag = parseDirectFlag(selector)
+  flag.value = rawValue === "" ? true : parseValueToken(rawValue, rawValue)
+  parsed.directFlags.push(flag)
+
+  const rawTargets = await session.ask(
+    "\nWhere should flag-prune look?\n" +
+    "Enter files or directories separated by commas. Press Enter to search the current directory (./).\n" +
+    "Paths [./]: ",
+  )
+  const targets = rawTargets === "" ? ["./"] : rawTargets.split(",").map((target) => target.trim())
+  if (targets.some((target) => target === "")) {
+    throw new Error("each file or directory must have a name")
+  }
+  parsed.targets.push(...targets)
+  io.stdout.write("\n")
+}
+
+async function confirmInteractiveWrite(session: InteractiveSession, io: CliIo): Promise<boolean> {
+  while (true) {
+    const answer = (await session.ask("\nWrite these changes? [y/N]: ")).toLowerCase()
+    if (answer === "y" || answer === "yes") return true
+    if (answer === "" || answer === "n" || answer === "no") return false
+    io.stdout.write("Please enter y for yes or n for no.\n")
+  }
 }
 
 function comparePaths(left: string, right: string): number {
@@ -419,107 +494,23 @@ function humanSummary(report: ReturnType<typeof aggregateReports>): string {
   ].join("\n")
 }
 
-async function loadConfig(parsed: CliArguments, cwd: string): Promise<FlagCleanConfig> {
-  let configured: FlagCleanConfig = { flags: [] }
-  if (parsed.configPath !== undefined) {
-    const path = resolve(cwd, parsed.configPath)
-    configured = validateConfig(JSON.parse(await readFile(path, "utf8")))
-  } else {
-    const defaultPath = resolve(cwd, "flag-prune.config.json")
-    if (await pathExists(defaultPath)) {
-      configured = validateConfig(JSON.parse(await readFile(defaultPath, "utf8")))
-    }
-  }
-
+function createConfig(parsed: CliArguments): FlagCleanConfig {
   const config = validateConfig({
-    ...configured,
     ...parsed.overrides,
-    ...(parsed.overrides.verify || configured.verify
-      ? { verify: { ...configured.verify, ...parsed.overrides.verify } }
-      : {}),
     ...(parsed.removeSideEffectImports ? { removeSideEffectImports: true } : {}),
-    flags: [...parsed.directFlags, ...configured.flags],
+    flags: parsed.directFlags,
   })
   if (config.flags.length === 0) {
-    throw new Error("no flags configured; use --flag NAME.path[=true|false] or --config <path>")
+    throw new Error("no flags provided; use --flag NAME.path[=value]")
   }
   return config
-}
-
-async function commandExists(path: string): Promise<boolean> {
-  try {
-    await access(path, fsConstants.X_OK)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await access(path)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function packageScripts(cwd: string): Promise<Record<string, string>> {
-  try {
-    const packageJson = JSON.parse(await readFile(join(cwd, "package.json"), "utf8")) as {
-      scripts?: Record<string, string>
-    }
-    return packageJson.scripts ?? {}
-  } catch {
-    return {}
-  }
-}
-
-async function defaultVerificationCommand(
-  cwd: string,
-  kind: "typecheck" | "lint" | "tests",
-): Promise<string> {
-  const scriptName = kind === "tests" ? "test" : kind
-  const scripts = await packageScripts(cwd)
-  if (scripts[scriptName] !== undefined) {
-    const packageManager = await pathExists(join(cwd, "pnpm-lock.yaml")) ? "pnpm" : "npm"
-    return `${packageManager} run ${scriptName}`
-  }
-  if (kind === "tests") throw new Error("test verification requested but package.json has no test script")
-  const executable = join(cwd, "node_modules", ".bin", kind === "typecheck" ? "tsc" : "eslint")
-  if (!(await commandExists(executable))) throw new Error(`${kind} verification requested but no command was found`)
-  return kind === "typecheck" ? `"${executable}" --noEmit` : `"${executable}" .`
-}
-
-function spawnCommand(command: string, cwd: string): Promise<void> {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(command, { cwd, shell: true, stdio: "inherit", env: process.env })
-    child.once("error", reject)
-    child.once("exit", (code, signal) => {
-      if (code === 0) resolvePromise()
-      else reject(new Error(`verification command failed (${signal ?? `exit ${code ?? "unknown"}`}): ${command}`))
-    })
-  })
-}
-
-async function runVerification(
-  cwd: string,
-  configured: VerificationConfig | undefined,
-  requested: CliArguments["verification"],
-): Promise<void> {
-  const checks = ["typecheck", "lint", "tests"] as const
-  for (const check of checks) {
-    const setting = requested[check] || configured?.[check]
-    if (!setting) continue
-    const command = typeof setting === "string" ? setting : await defaultVerificationCommand(cwd, check)
-    await spawnCommand(command, cwd)
-  }
 }
 
 export async function runCli(
   args: string[],
   io: CliIo = { cwd: process.cwd(), stdout: process.stdout, stderr: process.stderr },
 ): Promise<number> {
+  let interactiveSession: InteractiveSession | undefined
   try {
     const parsed = parseArguments(args)
     if (parsed.help) {
@@ -530,12 +521,20 @@ export async function runCli(
       io.stdout.write(`${VERSION}\n`)
       return 0
     }
+    if (args.length === 0) {
+      if ((io.env ?? process.env).CI !== "true") {
+        interactiveSession = createInteractiveSession(io)
+        await runInteractiveSetup(parsed, io, interactiveSession)
+      } else {
+        throw new Error("no arguments provided in CI environment; use --help for usage")
+      }
+    }
     if (parsed.targets.length === 0) throw new Error("provide at least one file or directory")
-    const config = await loadConfig(parsed, io.cwd)
+    const config = createConfig(parsed)
     const { files, warnings: discoveryWarnings } = await collectFiles(io.cwd, parsed.targets, parsed.ignore)
     for (const warning of discoveryWarnings) io.stderr.write(`warning: ${warning}\n`)
     if (files.length === 0) {
-      io.stderr.write("flag-prune: no JavaScript or TypeScript files found\n")
+      io.stderr.write("flag-prune: no files found\n")
       return 0
     }
 
@@ -561,17 +560,9 @@ export async function runCli(
       throw new Error(`transform did not reach a fixed point for: ${names}; raise maxPasses or report a bug`)
     }
 
-    const verificationRequested =
-      Object.values(parsed.verification).some(Boolean) ||
-      Boolean(config.verify?.typecheck || config.verify?.lint || config.verify?.tests)
-    const persistForVerification = verificationRequested && !parsed.write && changed.length > 0
-    const applied = (parsed.write && changed.length > 0) || persistForVerification
-
-    if (applied) {
+    let changesWritten = parsed.write && changed.length > 0
+    if (changesWritten) {
       for (const result of changed) await atomicWrite(result.path, result.code)
-    }
-    if (persistForVerification) {
-      io.stderr.write("flag-prune: verifying transformed output without persisting changes\n")
     }
 
     if (parsed.diff) {
@@ -588,30 +579,29 @@ export async function runCli(
       for (const warning of report.warnings) io.stderr.write(`warning: ${warning}\n`)
     }
 
-    const restore = async (): Promise<void> => {
-      for (const result of changed) await atomicWrite(result.path, result.source)
+    if (
+      interactiveSession !== undefined &&
+      changed.length > 0 &&
+      await confirmInteractiveWrite(interactiveSession, io)
+    ) {
+      for (const result of changed) await atomicWrite(result.path, result.code)
+      changesWritten = true
+      io.stdout.write(`Changes written to ${changed.length} ${changed.length === 1 ? "file" : "files"}.\n`)
     }
-    if (verificationRequested) {
-      try {
-        await runVerification(io.cwd, config.verify, parsed.verification)
-      } catch (error) {
-        if (applied) {
-          await restore()
-          io.stderr.write(
-            parsed.write
-              ? "flag-prune: verification failed; rolled back written changes\n"
-              : "flag-prune: verification failed; discarded transformed output\n",
-          )
-        }
-        throw error
-      }
-      if (persistForVerification) await restore()
+    if (changed.length > 0 && !parsed.json) {
+      io.stdout.write(
+        changesWritten
+          ? "Next: run your project's typecheck, lint, and tests.\n"
+          : "After writing these changes, run your project's typecheck, lint, and tests.\n",
+      )
     }
     if (parsed.strict && (report.warnings.length > 0 || discoveryWarnings.length > 0 || skipped.length > 0)) return 2
     return parsed.check && report.filesChanged > 0 ? 1 : 0
   } catch (error) {
     io.stderr.write(`flag-prune: ${error instanceof Error ? error.message : String(error)}\n`)
     return 2
+  } finally {
+    interactiveSession?.close()
   }
 }
 
@@ -621,6 +611,8 @@ const isEntryPoint =
 if (isEntryPoint) {
   process.exitCode = await runCli(process.argv.slice(2), {
     cwd: process.cwd(),
+    env: process.env,
+    stdin: process.stdin,
     stdout: { write: (value) => writeSync(1, value) },
     stderr: { write: (value) => writeSync(2, value) },
   })
