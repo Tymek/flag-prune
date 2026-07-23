@@ -173,23 +173,23 @@ A flag inside an object spread often folds to a value that spreads nothing.
 Source:
 
 ```ts
-const where = {
-  deactivatedAt: null,
-  ...(hasFeature.newAccessControl ? {} : { permission: "COMPLIANCE_OFFICER" }),
+const content = {
+  state: null,
+  ...(flagValue ? {} : { permission: 1 }),
 }
 ```
 
 Command:
 
 ```sh
-npx flag-prune --set 'hasFeature.newAccessControl=true' --write src
+npx flag-prune --set 'flagValue=true' --write src
 ```
 
 Result:
 
 ```ts
-const where = {
-  deactivatedAt: null,
+const content = {
+  state: null,
 }
 ```
 

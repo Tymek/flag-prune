@@ -121,18 +121,17 @@ Folding a flag inside an object spread can leave a spread that contributes no
 properties, such as `...(false)` or `...({})`:
 
 ```ts
-const where = {
-  deactivatedAt: null,
-  ...(hasFeature.newAccessControl ? {} : { permission: "COMPLIANCE_OFFICER" }),
+const content = {
+  state: null,
+  ...(flagValue ? {} : { permission: 1 }),
 }
 ```
 
-With `hasFeature.newAccessControl` true, the spread folds to `...({})` and is
-removed:
+With `flagValue` true, the spread folds to `...({})` and is removed:
 
 ```ts
-const where = {
-  deactivatedAt: null,
+const content = {
+  state: null,
 }
 ```
 

@@ -70,7 +70,7 @@ Considering initial code:
 export async function getSettings() {
   let user: Awaited<UserType>
 
-  if (hasFeature.newAccessControl) {
+  if (flagValue) {
     user = await getUser()
   } else {
     user = await getLegacyUser()
@@ -79,7 +79,7 @@ export async function getSettings() {
 }
 ```
 
-After `flag-prune` resolves `hasFeature.newAccessControl` to `true`, you might have:
+After `flag-prune` resolves `flagValue` to `true`, you might have:
 
 ```ts
 export async function getSettings() {
