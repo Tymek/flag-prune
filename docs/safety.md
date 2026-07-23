@@ -128,6 +128,33 @@ if (FLAG) {
 
 When the branch is selected, the braces remain if they are needed to preserve lexical semantics.
 
+### Opt-in block de-scoping
+
+`flattenBlocks: true` (or `--flatten-blocks`) hoists a scoping block's
+declarations into the parent block, but only when it is provably safe:
+
+- None of the block's directly declared names already bind in the parent scope,
+  so hoisting cannot redeclare or shadow an existing binding.
+- None of those names are referenced anywhere outside the block, so hoisting
+  cannot capture an outer reference.
+
+When either check fails, the block is left intact. The option is off by default
+because keeping the block is always safe.
+
+```ts
+if (FLAG) {
+  const access = await load()
+  user = await resolve(access)
+}
+```
+
+With `FLAG` true and `flattenBlocks` enabled, this de-scopes to:
+
+```ts
+const access = await load()
+user = await resolve(access)
+```
+
 ## Control flow is conservative
 
 The transform can simplify:
@@ -210,5 +237,12 @@ Reparsing is not a substitute for project checks. Run the repository's typecheck
 | Keep newly unused imports                    | `removeUnusedImports: false`         | `--no-remove-unused-imports`  |
 | Preserve all removed comments                | `commentPolicy: "preserve"`          | `--keep-comments`             |
 | Skip output reparsing                        | `verify: { parse: false }`           | `--no-parse-check`            |
+
+Opt-in behavior that trades conservatism for a cleaner result:
+
+| Need                                    | Library option          | CLI option          |
+| --------------------------------------- | ----------------------- | ------------------- |
+| De-scope safe blocks left by folding    | `flattenBlocks: true`   | `--flatten-blocks`  |
+| Remove empty side-effect-free imports   | `removeSideEffectImports: true` | `--remove-side-effect-imports` |
 
 The default settings favor useful cleanup while preserving evaluation and module behavior.

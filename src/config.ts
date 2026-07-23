@@ -18,6 +18,7 @@ const ALLOWED_CONFIG_KEYS = new Set([
   "simplifyEffectfulConditions",
   "removeUnusedImports",
   "removeSideEffectImports",
+  "flattenBlocks",
   "commentPolicy",
   "maxPasses",
   "solverVariableLimit",
@@ -103,7 +104,7 @@ export function validateConfig(input: unknown): FlagCleanConfig {
   if (value.commentPolicy !== undefined && !commentPolicies.includes(String(value.commentPolicy))) {
     fail("commentPolicy must be report, preserve, or discard")
   }
-  for (const key of ["simplifyEffectfulConditions", "removeUnusedImports", "removeSideEffectImports"] as const) {
+  for (const key of ["simplifyEffectfulConditions", "removeUnusedImports", "removeSideEffectImports", "flattenBlocks"] as const) {
     if (value[key] !== undefined && typeof value[key] !== "boolean") fail(`${key} must be boolean`)
   }
   for (const key of ["maxPasses", "solverVariableLimit"] as const) {

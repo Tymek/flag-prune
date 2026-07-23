@@ -31,6 +31,7 @@ npx flag-prune --set 'useFlag("new-ui")=false' src packages/app
 | `--keep-comments`                              | Shortcut for `--comment-policy preserve`.                                            |
 | `--no-remove-unused-imports`                   | Keep imports after configured bindings become unused.                                |
 | `--remove-side-effect-imports`                 | Remove an empty configured import instead of preserving module initialization.       |
+| `--flatten-blocks`                             | De-scope safe blocks left by folding by hoisting their declarations. Off by default. |
 | `--skip-effectful-conditions`                  | Leave constant conditions unchanged when evaluating the condition still has effects. |
 | `--max-passes <n>`                             | Set the simplification pass limit. Default: `20`.                                    |
 | `--no-parse-check`                             | Skip reparsing generated output.                                                     |
@@ -166,6 +167,7 @@ The output shape is:
     unreachableStatementsRemoved: number
     importsRemoved: number
     bindingsRemoved: number
+    blocksFlattened: number
     effectsPreserved: number
     removedComments: RemovedComment[]
     warnings: string[]

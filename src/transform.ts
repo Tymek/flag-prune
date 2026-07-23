@@ -424,6 +424,7 @@ function createReport(filename?: string): TransformReport {
     unreachableStatementsRemoved: 0,
     importsRemoved: 0,
     bindingsRemoved: 0,
+    blocksFlattened: 0,
     effectsPreserved: 0,
     removedComments: [],
     warnings: [],
@@ -456,6 +457,7 @@ export function transform(source: string, options: TransformOptions): TransformR
         commentPolicy: config.commentPolicy ?? "report",
         simplifyEffectfulConditions: config.simplifyEffectfulConditions ?? true,
         solverVariableLimit: config.solverVariableLimit ?? 8,
+        flattenBlocks: config.flattenBlocks ?? false,
       },
       report,
     )

@@ -22,6 +22,7 @@ export interface SimplifyOptions {
   commentPolicy: CommentPolicy
   simplifyEffectfulConditions: boolean
   solverVariableLimit: number
+  flattenBlocks: boolean
 }
 
 interface PassState {
@@ -452,6 +453,69 @@ function removeUnreachable(path: NodePath<t.Program | t.BlockStatement>, state: 
   }
 }
 
+function flattenableNames(block: t.BlockStatement): string[] {
+  const names: string[] = []
+  for (const statement of block.body) {
+    if (t.isVariableDeclaration(statement)) {
+      for (const declaration of statement.declarations) {
+        names.push(...Object.keys(t.getBindingIdentifiers(declaration.id)))
+      }
+    } else if ((t.isFunctionDeclaration(statement) || t.isClassDeclaration(statement)) && statement.id != null) {
+      names.push(statement.id.name)
+    }
+  }
+  return names
+}
+
+function referencedOutside(blockPath: NodePath<t.BlockStatement>, names: Set<string>): boolean {
+  const container = blockPath.findParent((parent) => parent.isProgram() || parent.isFunction())
+  if (container === null) return true
+  const blockStart = blockPath.node.start
+  const blockEnd = blockPath.node.end
+  let found = false
+  container.traverse({
+    ReferencedIdentifier(referencePath) {
+      if (found || !names.has(referencePath.node.name)) return
+      const start = referencePath.node.start
+      const end = referencePath.node.end
+      const inside =
+        blockStart != null && blockEnd != null && start != null && end != null && start >= blockStart && end <= blockEnd
+      if (!inside) found = true
+    },
+  })
+  return found
+}
+
+/**
+ * De-scope a bare block by hoisting its statements into the parent block when it
+ * is provably safe: none of its directly declared names already bind in the
+ * parent scope, and none are referenced outside the block.
+ */
+function flattenBlock(path: NodePath<t.BlockStatement>, state: PassState): void {
+  if (!state.options.flattenBlocks) return
+  const parent = path.parentPath
+  if ((!parent.isBlockStatement() && !parent.isProgram()) || !path.inList || path.listKey !== "body") return
+
+  const parentScope = path.scope.parent
+  if (parentScope == null) return
+  const names = flattenableNames(path.node)
+  for (const name of names) {
+    if (parentScope.hasBinding(name)) return
+  }
+  if (names.length > 0 && referencedOutside(path, new Set(names))) return
+
+  const body = path.node.body
+  if (body.length > 0) {
+    const leading = path.node.leadingComments
+    if (leading?.length) {
+      body[0]!.leadingComments = [...leading, ...(body[0]!.leadingComments ?? [])]
+    }
+  }
+  path.replaceWithMultiple(body)
+  state.changes += 1
+  state.report.blocksFlattened += 1
+}
+
 function simplifyExpressionStatement(path: NodePath<t.ExpressionStatement>, state: PassState): void {
   const expression = expressionPath(path, "expression")
   if (constantOf(expression.node) === "unknown") return
@@ -595,6 +659,7 @@ export function simplifyPass(
     BlockStatement: {
       exit(path) {
         removeUnreachable(path, state)
+        flattenBlock(path, state)
       },
     },
     Program: {

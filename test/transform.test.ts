@@ -502,6 +502,91 @@ describe("control flow", () => {
   })
 })
 
+describe("block de-scoping", () => {
+  const flags = [{ identifier: "FLAG", value: true }]
+
+  it("keeps the scoping block by default", () => {
+    const source = `function f() {
+  let user
+  if (FLAG) {
+    const access = load()
+    user = use(access)
+  }
+  return user
+}`
+    const result = run(source, flags)
+    expect(result.code).toMatch(/\{\s*const access = load\(\)/)
+    expect(result.report.blocksFlattened).toBe(0)
+  })
+
+  it("hoists declarations from a safe block when enabled", () => {
+    const source = `function f() {
+  let user
+  if (FLAG) {
+    const access = load()
+    user = use(access)
+  }
+  return user
+}`
+    const result = run(source, flags, { flattenBlocks: true })
+    expect(result.code).toContain("  const access = load()")
+    expect(result.code).not.toMatch(/\{\s*const access/)
+    expect(result.report.blocksFlattened).toBe(1)
+  })
+
+  it("does not flatten when a declared name collides with an outer binding", () => {
+    const source = `function f() {
+  const access = outer()
+  if (FLAG) {
+    const access = inner()
+    use(access)
+  }
+  return access
+}`
+    const result = run(source, flags, { flattenBlocks: true })
+    expect(result.report.blocksFlattened).toBe(0)
+    expect(result.code).toMatch(/\{\s*const access = inner\(\)/)
+  })
+
+  it("does not flatten when a declared name is referenced outside the block", () => {
+    const source = `function g() {
+  if (FLAG) {
+    const token = make()
+    use(token)
+  }
+  log(token)
+}`
+    const result = run(source, flags, { flattenBlocks: true })
+    expect(result.report.blocksFlattened).toBe(0)
+  })
+
+  it("keeps comments while flattening", () => {
+    const source = `if (FLAG) {
+  // set up access
+  const access = load()
+  run(access)
+}`
+    const result = run(source, flags, { flattenBlocks: true })
+    expect(result.code).toContain("// set up access")
+    expect(result.code).toContain("const access = load()")
+    expect(result.report.blocksFlattened).toBe(1)
+  })
+
+  it("is idempotent after de-scoping", () => {
+    const source = `function f() {
+  let value
+  if (FLAG) {
+    const helper = build()
+    value = helper.result
+  }
+  return value
+}`
+    const once = run(source, flags, { flattenBlocks: true }).code
+    const twice = run(once, flags, { flattenBlocks: true }).code
+    expect(twice).toBe(once)
+  })
+})
+
 describe("comments, JSX, and output validity", () => {
   it("retains surviving comments and reports removed branch comments", () => {
     const source = `if (false) {

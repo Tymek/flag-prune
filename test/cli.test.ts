@@ -266,6 +266,22 @@ describe("flag-prune process", () => {
     expect(result.stderr).toContain("--color must be auto, always, or never")
   })
 
+  it("de-scopes a safe block with --flatten-blocks", async () => {
+    const cwd = await fixture()
+    await writeFile(
+      join(cwd, "input.ts"),
+      "function f() {\n  let user\n  if (FLAG) {\n    const access = load()\n    user = use(access)\n  }\n  return user\n}\n",
+    )
+    const kept = await invoke(["--set", "FLAG=true", "input.ts"], cwd)
+    expect(kept.stdout).toContain("0 blocks de-scoped")
+    const flattened = await invoke(["--set", "FLAG=true", "--flatten-blocks", "--write", "input.ts"], cwd)
+    expect(flattened).toMatchObject({ code: 0, stderr: "" })
+    expect(flattened.stdout).toContain("1 block de-scoped")
+    const written = await readFile(join(cwd, "input.ts"), "utf8")
+    expect(written).toContain("  const access = load()")
+    expect(written).not.toMatch(/\{\s*const access/)
+  })
+
   it("accepts an exact call rule and removes an assigned flag binding", async () => {
     const cwd = await fixture()
     await writeFile(

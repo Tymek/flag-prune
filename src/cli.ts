@@ -87,6 +87,9 @@ Options:
                         Keep imports even after their flag binding is removed
       --remove-side-effect-imports
                         Delete empty flag imports known to be side-effect-free
+      --flatten-blocks
+                        De-scope safe blocks left by folding; hoists their
+                        declarations when no name collision can occur
       --skip-effectful-conditions
                         Leave constant conditions whose test still has effects
       --max-passes <n>  Cap simplification passes (default 20)
@@ -325,6 +328,7 @@ function parseArguments(args: string[]): CliArguments {
     }
     else if (argument === "--json") result.json = true
     else if (argument === "--remove-side-effect-imports") result.removeSideEffectImports = true
+    else if (argument === "--flatten-blocks") result.overrides.flattenBlocks = true
     else if (argument === "--no-remove-unused-imports") result.overrides.removeUnusedImports = false
     else if (argument === "--skip-effectful-conditions") result.overrides.simplifyEffectfulConditions = false
     else if (argument === "--no-parse-check") result.overrides.verify = { ...result.overrides.verify, parse: false }
@@ -549,6 +553,7 @@ function aggregateReports(results: FileResult[]): Omit<TransformReport, "filenam
     unreachableStatementsRemoved: 0,
     importsRemoved: 0,
     bindingsRemoved: 0,
+    blocksFlattened: 0,
     effectsPreserved: 0,
     removedComments: [] as TransformReport["removedComments"],
     warnings: [] as string[],
@@ -562,6 +567,7 @@ function aggregateReports(results: FileResult[]): Omit<TransformReport, "filenam
     report.unreachableStatementsRemoved += result.report.unreachableStatementsRemoved
     report.importsRemoved += result.report.importsRemoved
     report.bindingsRemoved += result.report.bindingsRemoved
+    report.blocksFlattened += result.report.blocksFlattened
     report.effectsPreserved += result.report.effectsPreserved
     report.removedComments.push(...result.report.removedComments)
     report.warnings.push(...result.report.warnings.map((warning) => `${result.path}: ${warning}`))
@@ -582,6 +588,7 @@ function humanSummary(report: ReturnType<typeof aggregateReports>): string {
     `${count(report.unreachableStatementsRemoved, "unreachable statement")} removed`,
     `${count(report.importsRemoved, "import")} removed`,
     `${count(report.bindingsRemoved, "binding")} removed`,
+    `${count(report.blocksFlattened, "block")} de-scoped`,
     `${count(report.effectsPreserved, "effectful expression")} preserved`,
     `${count(report.removedComments.filter((comment) => !comment.retained).length, "comment")} removed and reported`,
     count(report.warnings.length, "warning"),

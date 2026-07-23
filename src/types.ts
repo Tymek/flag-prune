@@ -47,6 +47,11 @@ export interface FlagCleanConfig {
   removeUnusedImports?: boolean
   /** Remove an import declaration after its last configured binding is removed. */
   removeSideEffectImports?: boolean
+  /**
+   * Hoist declarations out of a bare block left by branch folding when it is
+   * provably safe (no name collision or outside reference). Off by default.
+   */
+  flattenBlocks?: boolean
   commentPolicy?: CommentPolicy
   maxPasses?: number
   solverVariableLimit?: number
@@ -76,6 +81,7 @@ export interface TransformReport {
   unreachableStatementsRemoved: number
   importsRemoved: number
   bindingsRemoved: number
+  blocksFlattened: number
   effectsPreserved: number
   removedComments: RemovedComment[]
   warnings: string[]
