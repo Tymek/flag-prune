@@ -17,6 +17,13 @@ it("prints changed Babel 8 TypeScript interface heritage", () => {
   expect(result.code).toContain("yes();")
 })
 
+it("preserves source line endings and defaults to LF", () => {
+  const flags = [{ identifier: "FLAG", value: false }]
+  expect(run("if (FLAG) yes(); else no();", flags).code).toBe("no();\n")
+  expect(run("if (FLAG) yes(); else no();\n", flags).code).toBe("no();\n")
+  expect(run("if (FLAG) yes(); else no();\r\n", flags).code).toBe("no();\r\n")
+})
+
 describe("feature flag matching", () => {
   it("replaces member flags and collapses branches", () => {
     const result = run(

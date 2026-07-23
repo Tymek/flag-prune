@@ -366,6 +366,11 @@ function createReport(filename?: string): TransformReport {
   }
 }
 
+function preferredLineTerminator(source: string): "\n" | "\r\n" | "\r" {
+  const firstTerminator = /\r\n|\r|\n/.exec(source)
+  return (firstTerminator?.[0] as "\n" | "\r\n" | "\r" | undefined) ?? "\n"
+}
+
 export function transform(source: string, options: TransformOptions): TransformResult {
   const config = validateConfig(options)
   const report = createReport(options.filename)
@@ -410,8 +415,11 @@ export function transform(source: string, options: TransformOptions): TransformR
 
   if (totalChanges === 0) return { code: source, changed: false, report }
 
-  const generated = print(ast, { reuseWhitespace: true, quote }).code
-  const code = generated.length === 0 || generated.endsWith("\n") ? generated : `${generated}\n`
+  const lineTerminator = preferredLineTerminator(source)
+  const generated = print(ast, { reuseWhitespace: true, quote, lineTerminator }).code
+  const code = generated.length === 0 || generated.endsWith(lineTerminator)
+    ? generated
+    : `${generated}${lineTerminator}`
   if (config.verify?.parse !== false) parseSource(code, options.filename)
 
   return { code, changed: code !== source, report }

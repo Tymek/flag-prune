@@ -1,6 +1,6 @@
-# flag-prune documentation
+# Documentation - `flag-prune`
 
-`flag-prune` replaces known feature-flag values and removes the code that can no longer run. Start with a preview, inspect the diff, then write the result.
+Replace known feature-flag values and remove the code that can no longer run. Start with a preview, inspect the diff, then write the result.
 
 ## Start here
 
